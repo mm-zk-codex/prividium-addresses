@@ -1,7 +1,6 @@
 {
   "name": "contracts",
   "private": true,
-  "type": "module",
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",

@@ -1,5 +1,8 @@
 packages:
-  - 'apps/*'
-  - 'services/*'
-  - 'packages/*'
-  - 'contracts'
+  - apps/*
+  - services/*
+  - packages/*
+  - contracts
+
+onlyBuiltDependencies:
+  - better-sqlite3
