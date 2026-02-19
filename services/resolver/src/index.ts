@@ -69,6 +69,12 @@ app.post('/alias/register', (req, res) => {
 
 app.post('/deposit/request', async (req, res) => {
   const { email, suffix, tokenType = 'ETH', l1TokenAddress = null, amount = null } = req.body as any;
+  if (tokenType !== 'ETH' && tokenType !== 'ERC20') {
+    return res.status(400).json({ error: 'tokenType must be ETH or ERC20' });
+  }
+  if (tokenType === 'ERC20' && !l1TokenAddress) {
+    return res.status(400).json({ error: 'l1TokenAddress is required when tokenType is ERC20' });
+  }
   const parsed = parseEmailAndSuffix(email, suffix);
   const aliasKey = aliasKeyFromParts(parsed.normalizedEmail, parsed.suffix);
   const alias = db.prepare('SELECT * FROM aliases WHERE aliasKey=?').get(aliasKey) as any;
@@ -105,7 +111,19 @@ app.post('/deposit/request', async (req, res) => {
   db.prepare(
     `INSERT INTO deposit_requests(trackingId, aliasKey, chainId, l1DepositAddressY, l2VaultAddressX, saltY, saltX, tokenType, l1TokenAddress, amount, status, issuedAt)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?)`
-  ).run(trackingId, aliasKey, cfg.l1.chainId, y, x, saltY, saltX, tokenType, l1TokenAddress, amount, Date.now());
+  ).run(
+    trackingId,
+    aliasKey,
+    cfg.l1.chainId,
+    y,
+    x,
+    saltY,
+    saltX,
+    tokenType,
+    l1TokenAddress ? getAddress(l1TokenAddress) : null,
+    amount,
+    Date.now()
+  );
 
   res.json({ trackingId, l1DepositAddress: y, l2Destination: x, tokenType, chainId: cfg.l1.chainId });
 });

@@ -27,6 +27,7 @@ Example values (`infra/.env`):
 - `CONTRACTS_JSON_PATH=contracts/deployments/11155111.json`
 - `RELAYER_L1_PRIVATE_KEY=0x...`
 - `RELAYER_L2_PRIVATE_KEY=0x...`
+- `L2_DEPLOYER_PRIVATE_KEY=0x...` (optional; defaults to `RELAYER_L2_PRIVATE_KEY` for deploy script)
 - `REFUND_RECIPIENT_L2=0x...` (default relayer L2 wallet)
 - `BRIDGEHUB_ADDRESS=0x...`
 - `ASSET_ROUTER_ADDRESS=0x...`

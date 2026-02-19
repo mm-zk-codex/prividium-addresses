@@ -28,7 +28,7 @@ const pubdata = BigInt(process.env.L2_GAS_PER_PUBDATA_DEFAULT ?? '800');
 
 async function tick() {
   const rows = db
-    .prepare("SELECT * FROM deposit_requests WHERE status IN ('issued','l1_detected','l1_forwarder_deployed') ORDER BY issuedAt ASC LIMIT 20")
+    .prepare("SELECT dr.*, a.recipientPrividiumAddress FROM deposit_requests dr JOIN aliases a ON a.aliasKey = dr.aliasKey WHERE dr.status IN ('issued','l1_detected','l1_forwarder_deployed') ORDER BY dr.issuedAt ASC LIMIT 20")
     .all() as any[];
 
   for (const row of rows) {
@@ -49,11 +49,12 @@ async function tick() {
 
       const code = await publicClient.getCode({ address: y });
       if (!code || code === '0x') {
+        const refundRecipient = process.env.REFUND_RECIPIENT_L2 ?? row.recipientPrividiumAddress;
         const deployTx = await walletClient.writeContract({
           address: cfg.l1.forwarderFactoryL1,
           abi: FORWARDER_FACTORY_L1_ABI,
           functionName: 'deploy',
-          args: [row.saltY, cfg.l1.bridgehub, BigInt(cfg.l2.chainId), row.l2VaultAddressX, process.env.REFUND_RECIPIENT_L2, cfg.assetRouter, cfg.nativeTokenVault]
+          args: [row.saltY, cfg.l1.bridgehub, BigInt(cfg.l2.chainId), row.l2VaultAddressX, refundRecipient, cfg.assetRouter, cfg.nativeTokenVault]
         });
         await publicClient.waitForTransactionReceipt({ hash: deployTx });
         db.prepare("UPDATE deposit_requests SET status='l1_forwarder_deployed', l1DeployTxHash=? WHERE trackingId=?").run(deployTx, row.trackingId);
