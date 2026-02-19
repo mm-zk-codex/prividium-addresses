@@ -1,0 +1,14 @@
+{
+  "name": "prividium-addresses",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "echo 'Run app/service specific dev scripts'",
+    "test": "pnpm --filter contracts test"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

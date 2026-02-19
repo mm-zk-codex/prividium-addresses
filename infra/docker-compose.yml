@@ -1,0 +1,15 @@
+version: '3.9'
+services:
+  resolver:
+    image: node:22
+    working_dir: /workspace
+    volumes: ['..:/workspace']
+    command: sh -lc "pnpm --filter resolver dev"
+    env_file: ['.env']
+    ports: ['4000:4000']
+  relayer:
+    image: node:22
+    working_dir: /workspace
+    volumes: ['..:/workspace']
+    command: sh -lc "pnpm --filter relayer dev"
+    env_file: ['.env']
