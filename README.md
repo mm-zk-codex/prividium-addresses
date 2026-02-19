@@ -1,102 +1,77 @@
-# Prividium Addresses PoC (Phase 1)
+# Prividium Addresses PoC (Phase 2)
 
-Phase 1 implements a single-chain (Sepolia `11155111`) native ETH flow:
+Phase 2 implements the 2-hop counterfactual flow:
 
-1. Recipient registers `email + optional suffix` alias in Prividium portal.
-2. Public send page asks resolver for a fresh CREATE2 deposit address.
-3. Sender funds the counterfactual address before deployment.
-4. Relayer detects balance, deploys `StealthForwarder`, sweeps to `BridgeAdapterMock`.
-5. Mock adapter forwards funds to treasury on same chain and marks request `credited`.
+1. Sender only gets one L1 deposit address `Y` and sends ETH/ERC20 there.
+2. L1 relayer deploys `StealthForwarderL1` at `Y` and bridges to L2 vault address `X`.
+3. L2 relayer deploys `OneWayVault` at `X` and sweeps to recipient wallet `R`.
+4. Operator pays deployment + bridge mint fees.
+5. Operator cannot redirect funds because forwarder/vault destinations are immutable.
 
-## Monorepo Layout
+## Components
 
-- `apps/send-web` — public send page.
-- `apps/prividium-web` — Prividium login + alias management + deposit status list.
-- `services/resolver` — alias/deposit API + SQLite.
-- `services/relayer` — worker polling SQLite and chain.
-- `contracts` — Hardhat Solidity contracts, deployment script, tests.
-- `packages/types` — shared TS types and utilities.
-- `infra` — `.env.example`, docker-compose.
+- `contracts/src/l1`: `ForwarderFactoryL1`, `StealthForwarderL1`
+- `contracts/src/l2`: `VaultFactory`, `OneWayVault`
+- `services/resolver`: alias + request issuance + X/Y computation
+- `services/relayer-l1`: detects Y, deploys forwarder, submits bridge tx
+- `services/relayer-l2`: detects X arrival, deploys vault, sweeps to R
+- `apps/send-web`: sender UX for Y + timeline
+- `apps/prividium-web`: recipient alias management + X/Y status table
 
-## Data Model
+## Environment
 
-SQLite tables are created by resolver startup:
+Example values (`infra/.env`):
 
-- `aliases` (`aliasKey`, `normalizedEmail`, `suffix`, `recipientPrividiumAddress`, `createdAt`)
-- `deposit_requests` (`trackingId`, `aliasKey`, `chainId`, `salt`, `depositAddress`, lifecycle timestamps/tx hashes/status/error)
-
-Phase 2 placeholders are represented by retaining alias-centered keying and metadata in deposits.
-
-## API
-
-Resolver endpoints:
-
-- `POST /alias/register`
-- `POST /deposit/request`
-- `GET /deposit/:trackingId`
-- `GET /alias/deposits?aliasKey=0x...`
-- `GET /health`
-- `GET /config`
+- `L1_RPC_URL=...`
+- `L2_RPC_URL=...`
+- `CONTRACTS_JSON_PATH=contracts/deployments/11155111.json`
+- `RELAYER_L1_PRIVATE_KEY=0x...`
+- `RELAYER_L2_PRIVATE_KEY=0x...`
+- `L2_DEPLOYER_PRIVATE_KEY=0x...` (optional; defaults to `RELAYER_L2_PRIVATE_KEY` for deploy script)
+- `REFUND_RECIPIENT_L2=0x...` (default relayer L2 wallet)
+- `BRIDGEHUB_ADDRESS=0x...`
+- `ASSET_ROUTER_ADDRESS=0x...`
+- `NATIVE_TOKEN_VAULT_ADDRESS=0x...`
+- `MINT_VALUE_WEI_ETH_DEFAULT=...`
+- `MINT_VALUE_WEI_ERC20_DEFAULT=...`
+- `L2_GAS_LIMIT_ETH_DEFAULT=...`
+- `L2_GAS_LIMIT_ERC20_DEFAULT=...`
+- `L2_GAS_PER_PUBDATA_DEFAULT=...`
+- `PRIVIDIUM_JWT=...` (for authenticated L2 RPC reads/writes)
 
 ## Runbook
 
-1. Install dependencies.
+1. Install:
    ```bash
    pnpm install
    ```
-2. Copy and fill environment values.
-   ```bash
-   cp infra/.env.example infra/.env
-   ```
-3. Compile contracts.
+2. Build contracts:
    ```bash
    pnpm --filter contracts build
    ```
-4. Deploy contracts to Sepolia.
+3. Deploy factories (L1+L2 output JSON):
    ```bash
    pnpm --filter contracts run deploy
    ```
-   Produces `contracts/deployments/11155111.json`.
-5. Start resolver.
+4. Fetch bridge dependencies (`assetRouter`, `nativeTokenVault`):
+   ```bash
+   pnpm --filter contracts exec hardhat run script/fetchBridgeDeps.ts --network sepolia
+   ```
+5. Start resolver:
    ```bash
    pnpm --filter resolver dev
    ```
-6. Start relayer.
+6. Start relayers:
    ```bash
-   pnpm --filter relayer dev
+   pnpm --filter relayer-l1 dev
+   pnpm --filter relayer-l2 dev
    ```
-7. Start send web app.
+7. Start UIs:
    ```bash
    pnpm --filter send-web dev
-   ```
-8. Start Prividium recipient portal app.
-   ```bash
    pnpm --filter prividium-web dev
    ```
-9. In `prividium-web`: login with Prividium, register alias.
-10. In `send-web`: generate deposit address for same email/suffix.
-11. Send Sepolia ETH to generated deposit address.
-12. Observe status flow: `issued -> detected -> deployed -> swept -> credited`.
-13. Verify treasury received ETH.
-
-## Notes
-
-- Scope deliberately excludes ERC20, withdrawals, and cross-chain bridging in Phase 1.
-- `BridgeAdapterMock.bridgeNative` ignores recipient and forwards to treasury.
-- Relayer is idempotent: re-checks code/balance before deploy/sweep.
-
-
-{
-  chainId: 11155111,
-  factory: '0xe55e0fa403933fc3a07e020f542aa3b93a82013e',
-  adapter: '0xbfd494cbf6751f03829a56e2074e70b41d54320f',
-  deployedAt: '2026-02-19T10:01:18.616Z'
-}
-
-pnpm -F @prividium-poc/types build
-
-
- pnpm approve-builds
-
-prividium web required a 'local' env file.
-
+8. Register alias in recipient portal.
+9. Request deposit address in sender app.
+10. Send ETH/ERC20 to `Y` on L1.
+11. Observe statuses: `issued -> l1_detected -> l1_bridging_submitted -> l2_arrived -> credited`.

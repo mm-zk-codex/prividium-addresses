@@ -1,43 +1,50 @@
 import { concatHex, encodeAbiParameters, getAddress, keccak256, parseAbi, toHex } from 'viem';
 
-export const DEFAULT_CHAIN_ID = 11155111;
-
-export const depositStatus = ['issued', 'detected', 'deployed', 'swept', 'credited', 'failed'] as const;
+export const depositStatus = [
+  'issued',
+  'l1_detected',
+  'l1_forwarder_deployed',
+  'l1_bridging_submitted',
+  'l2_arrived',
+  'l2_vault_deployed',
+  'l2_swept_to_R',
+  'credited',
+  'failed'
+] as const;
 export type DepositStatus = (typeof depositStatus)[number];
 
-export interface AliasRow {
-  aliasKey: string;
-  normalizedEmail: string;
-  suffix: string;
-  recipientPrividiumAddress: string;
-  createdAt: number;
-}
+export type TokenType = 'ETH' | 'ERC20';
 
 export interface DepositRequestRow {
   trackingId: string;
   aliasKey: string;
   chainId: number;
-  salt: string;
-  depositAddress: string;
+  l1DepositAddressY: string;
+  l2VaultAddressX: string;
+  saltY: string;
+  saltX: string;
+  tokenType: TokenType;
+  l1TokenAddress: string | null;
+  amount: string | null;
   status: DepositStatus;
-  issuedAt: number;
-  detectedAt: number | null;
-  deployedAt: number | null;
-  sweptAt: number | null;
-  creditedAt: number | null;
-  depositTxHash: string | null;
-  deployTxHash: string | null;
-  sweepTxHash: string | null;
-  amountWei: string | null;
-  error: string | null;
 }
 
-export const FACTORY_ABI = parseAbi([
-  'function computeAddress(bytes32 salt, bytes initCode) view returns (address)',
-  'function deploy(bytes32 salt, address recipient, address adapter) returns (address)'
+export const FORWARDER_FACTORY_L1_ABI = parseAbi([
+  'function computeAddress(bytes32,address,uint256,address,address,address,address) view returns (address)',
+  'function deploy(bytes32,address,uint256,address,address,address,address) returns (address)'
 ]);
 
-export const FORWARDER_ABI = parseAbi(['function sweepNative(bytes metadata)']);
+export const VAULT_FACTORY_ABI = parseAbi([
+  'function computeVaultAddress(bytes32,address) view returns (address)',
+  'function deployVault(bytes32,address) returns (address)'
+]);
+
+export const STEALTH_FORWARDER_L1_ABI = parseAbi([
+  'function sweepETH() payable',
+  'function sweepERC20(address l1Token,uint256 amount,bytes32 tokenAssetId,uint256 mintValue,uint256 l2GasLimit,uint256 l2GasPerPubdataByteLimit) payable'
+]);
+
+export const ONE_WAY_VAULT_ABI = parseAbi(['function sweepETH()', 'function sweepERC20(address token)']);
 
 export function normalizeEmail(input: string): string {
   return input.trim().toLowerCase();
@@ -51,31 +58,46 @@ export function parseEmailAndSuffix(emailInput: string, suffixInput?: string): {
   if (hashIdx > -1) {
     base = trimmed.slice(0, hashIdx);
     inferredSuffix = trimmed.slice(hashIdx + 1);
-  } else {
-    const atIdx = trimmed.indexOf('@');
-    const plusIdx = trimmed.indexOf('+');
-    if (plusIdx > -1 && atIdx > plusIdx) {
-      inferredSuffix = trimmed.slice(plusIdx + 1, atIdx);
-      base = `${trimmed.slice(0, plusIdx)}${trimmed.slice(atIdx)}`;
-    }
   }
   return { normalizedEmail: normalizeEmail(base), suffix: (suffixInput ?? inferredSuffix ?? '').trim().toLowerCase() };
 }
 
-export function aliasKeyFromParts(normalizedEmail: string, suffix: string): string {
+export function aliasKeyFromParts(normalizedEmail: string, suffix: string): `0x${string}` {
   return keccak256(toHex(`${normalizedEmail}#${suffix}`));
 }
 
-export function computeSalt(aliasKey: string, requestNonce: string): string {
-  return keccak256(concatHex([aliasKey as `0x${string}`, requestNonce as `0x${string}`]));
+export function computeSalt(aliasKey: `0x${string}`, requestNonce: `0x${string}`, suffix: 'X' | 'Y'): `0x${string}` {
+  return keccak256(concatHex([aliasKey, requestNonce, toHex(suffix)]));
 }
 
-export function buildForwarderInitCode(forwarderCreationCode: string, recipient: string, adapter: string): `0x${string}` {
+export function buildForwarderL1InitCode(
+  creationCode: string,
+  bridgehub: string,
+  l2ChainId: bigint,
+  xDestination: string,
+  refundRecipient: string,
+  assetRouter: string,
+  nativeTokenVault: string
+): `0x${string}` {
   return concatHex([
-    forwarderCreationCode as `0x${string}`,
+    creationCode as `0x${string}`,
     encodeAbiParameters(
-      [{ type: 'address' }, { type: 'address' }],
-      [getAddress(recipient), getAddress(adapter)]
+      [
+        { type: 'address' },
+        { type: 'uint256' },
+        { type: 'address' },
+        { type: 'address' },
+        { type: 'address' },
+        { type: 'address' }
+      ],
+      [
+        getAddress(bridgehub),
+        l2ChainId,
+        getAddress(xDestination),
+        getAddress(refundRecipient),
+        getAddress(assetRouter),
+        getAddress(nativeTokenVault)
+      ]
     )
   ]);
 }

@@ -1,22 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { createPrividiumChain } from 'prividium';
 import { defineChain } from 'viem';
 import { aliasKeyFromParts, parseEmailAndSuffix } from '@prividium-poc/types';
 import './index.css';
-
-class AuthorizedRpcClient {
-  constructor(private rpcUrl: string, private headersFn: () => Promise<Record<string, string>>) { }
-  async request(method: string, params: unknown[]) {
-    const headers = await this.headersFn();
-    const res = await fetch(this.rpcUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
-      body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params })
-    });
-    return res.json();
-  }
-}
 
 const chain = defineChain({
   id: 11155111,
@@ -40,30 +27,18 @@ function App() {
   const [walletAddress, setWalletAddress] = useState('');
   const [rows, setRows] = useState<any[]>([]);
 
-  const rpc = useMemo(
-    () =>
-      new AuthorizedRpcClient(import.meta.env.VITE_PRIVIDIUM_RPC_URL, async () => {
-        const headers = await prividium.getAuthHeaders();
-        return headers as Record<string, string>;
-      }),
-    []
-  );
-
   const login = async () => {
     if (!prividium.isAuthorized()) await prividium.authorize({ scopes: ['wallet:required', 'network:required'] });
     const user = await prividium.fetchUser();
-    const addr = user.wallets[0].walletAddress;
-
-    setWalletAddress(addr);
+    setWalletAddress(user.wallets[0].walletAddress);
   };
 
   const registerAlias = async () => {
-    const resp = await fetch(`${resolver}/alias/register`, {
+    await fetch(`${resolver}/alias/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email, suffix, recipientPrividiumAddress: walletAddress })
     });
-    await resp.json();
   };
 
   const loadDeposits = async () => {
@@ -76,6 +51,7 @@ function App() {
   return (
     <div className="card">
       <h1 className="text-xl font-bold">Prividium Recipient Portal</h1>
+      <p className="text-sm text-sky-300">Funds land in one-way vault X that can only forward to your wallet.</p>
       <button onClick={login}>Login with Prividium</button>
       <div className="break-all text-sm">Your wallet address: {walletAddress || 'Not connected'}</div>
       <input placeholder="Session email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -89,9 +65,10 @@ function App() {
           <li key={r.trackingId} className="border border-slate-700 rounded p-2">
             <div>{r.trackingId}</div>
             <div>{r.status}</div>
-            <div className="break-all">deposit: {r.depositAddress}</div>
-            <div className="break-all">deployTx: {r.deployTxHash ?? '-'}</div>
-            <div className="break-all">sweepTx: {r.sweepTxHash ?? '-'}</div>
+            <div className="break-all">Y (L1 deposit): {r.l1DepositAddressY}</div>
+            <div className="break-all">X (L2 vault): {r.l2VaultAddressX}</div>
+            <div className="break-all">L1 bridge tx: {r.l1BridgeTxHash ?? '-'}</div>
+            <div className="break-all">L2 sweep tx: {r.l2SweepTxHash ?? '-'}</div>
           </li>
         ))}
       </ul>
