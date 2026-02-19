@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import dotenv from 'dotenv';
 import { FACTORY_ABI, FORWARDER_ABI } from '@prividium-poc/types';
-import { createPublicClient, createWalletClient, encodePacked, http, sepolia } from 'viem';
+import { createPublicClient, createWalletClient, encodePacked, http } from 'viem';
+import { sepolia } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts';
 
 dotenv.config({ path: resolve(process.cwd(), '../../infra/.env') });
@@ -18,8 +19,15 @@ const cfg = JSON.parse(readFileSync(contractsPath, 'utf8')) as { factory: `0x${s
 
 const db = new Database(sqlitePath);
 const account = privateKeyToAccount(pk as `0x${string}`);
-const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
-const walletClient = createWalletClient({ chain: sepolia, transport: http(rpcUrl), account });
+
+export const mySepolia = {
+  ...sepolia,
+  id: 31337,
+  //id: process.env.CHAIN_ID || "31337", // your custom chain id
+}
+
+const publicClient = createPublicClient({ chain: mySepolia, transport: http(rpcUrl) });
+const walletClient = createWalletClient({ chain: mySepolia, transport: http(rpcUrl), account });
 
 const aliasRecipientStmt = db.prepare('SELECT recipientPrividiumAddress FROM aliases WHERE aliasKey = ?');
 

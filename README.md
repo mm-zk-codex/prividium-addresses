@@ -54,7 +54,7 @@ Resolver endpoints:
    ```
 4. Deploy contracts to Sepolia.
    ```bash
-   pnpm --filter contracts deploy
+   pnpm --filter contracts run deploy
    ```
    Produces `contracts/deployments/11155111.json`.
 5. Start resolver.
@@ -84,3 +84,19 @@ Resolver endpoints:
 - Scope deliberately excludes ERC20, withdrawals, and cross-chain bridging in Phase 1.
 - `BridgeAdapterMock.bridgeNative` ignores recipient and forwards to treasury.
 - Relayer is idempotent: re-checks code/balance before deploy/sweep.
+
+
+{
+  chainId: 11155111,
+  factory: '0xe55e0fa403933fc3a07e020f542aa3b93a82013e',
+  adapter: '0xbfd494cbf6751f03829a56e2074e70b41d54320f',
+  deployedAt: '2026-02-19T10:01:18.616Z'
+}
+
+pnpm -F @prividium-poc/types build
+
+
+ pnpm approve-builds
+
+prividium web required a 'local' env file.
+

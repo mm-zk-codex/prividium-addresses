@@ -6,7 +6,7 @@ import { aliasKeyFromParts, parseEmailAndSuffix } from '@prividium-poc/types';
 import './index.css';
 
 class AuthorizedRpcClient {
-  constructor(private rpcUrl: string, private headersFn: () => Promise<Record<string, string>>) {}
+  constructor(private rpcUrl: string, private headersFn: () => Promise<Record<string, string>>) { }
   async request(method: string, params: unknown[]) {
     const headers = await this.headersFn();
     const res = await fetch(this.rpcUrl, {
@@ -28,7 +28,6 @@ const chain = defineChain({
 const prividium = createPrividiumChain({
   clientId: import.meta.env.VITE_PRIVIDIUM_CLIENT_ID,
   chain,
-  rpcUrl: import.meta.env.VITE_PRIVIDIUM_RPC_URL,
   authBaseUrl: import.meta.env.VITE_PRIVIDIUM_AUTH_BASE_URL,
   prividiumApiBaseUrl: import.meta.env.VITE_PRIVIDIUM_API_BASE_URL,
   redirectUrl: `${window.location.origin}/auth/callback.html`
@@ -52,8 +51,9 @@ function App() {
 
   const login = async () => {
     if (!prividium.isAuthorized()) await prividium.authorize({ scopes: ['wallet:required', 'network:required'] });
-    const accountsResp = await rpc.request('eth_accounts', []);
-    const addr = accountsResp.result?.[0] ?? '';
+    const user = await prividium.fetchUser();
+    const addr = user.wallets[0].walletAddress;
+
     setWalletAddress(addr);
   };
 
