@@ -13,21 +13,13 @@ contract MockBridgehub is IBridgehub {
     L2TransactionRequestTwoBridgesOuter public lastTwoBridges;
 
     function requestL2TransactionDirect(
-        uint256 chainId,
-        uint256 mintValue,
-        address l2Contract,
-        uint256 l2Value,
-        bytes calldata,
-        uint256,
-        uint256,
-        bytes[] calldata,
-        address refundRecipient
+        L2TransactionRequestDirect calldata request
     ) external payable returns (bytes32) {
-        directChainId = chainId;
-        directMintValue = mintValue;
-        directL2Contract = l2Contract;
-        directL2Value = l2Value;
-        directRefund = refundRecipient;
+        directChainId = request.chainId;
+        directMintValue = request.mintValue;
+        directL2Contract = request.l2Contract;
+        directL2Value = request.l2Value;
+        directRefund = request.refundRecipient;
         return keccak256(abi.encodePacked("direct", block.number, msg.value));
     }
 

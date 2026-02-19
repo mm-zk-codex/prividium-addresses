@@ -15,17 +15,20 @@ interface IBridgehub {
         uint256 secondBridgeValue;
         bytes secondBridgeCalldata;
     }
+    struct L2TransactionRequestDirect {
+        uint256 chainId; // This will be our L2 chain id
+        uint256 mintValue; // how many tokens should be "created" on L2 chain (see explanations below)
+        address l2Contract; // L2 contract -- this will be our new account
+        uint256 l2Value; // how much value should we pass it it (see explanations below)
+        bytes l2Calldata; // Calldata will be 0x (as we're just passing value)
+        uint256 l2GasLimit; // gas limit for this call
+        uint256 l2GasPerPubdataByteLimit; // This is zksync specific
+        bytes[] factoryDeps; // Empty for now - this would be needed if we wanted to deploy some contract
+        address refundRecipient; // Where should "rest" of the tokens go.
+    }
 
     function requestL2TransactionDirect(
-        uint256 chainId,
-        uint256 mintValue,
-        address l2Contract,
-        uint256 l2Value,
-        bytes calldata l2Calldata,
-        uint256 l2GasLimit,
-        uint256 l2GasPerPubdataByteLimit,
-        bytes[] calldata factoryDeps,
-        address refundRecipient
+        L2TransactionRequestDirect calldata request
     ) external payable returns (bytes32);
 
     function requestL2TransactionTwoBridges(
@@ -41,8 +44,17 @@ contract StealthForwarderL1 {
     address public immutable assetRouter;
     address public immutable nativeTokenVault;
 
-    event SweptETH(address indexed xDestination, uint256 amount, bytes32 canonicalTxHash);
-    event SweptERC20(address indexed l1Token, uint256 amount, address indexed xDestination, bytes32 canonicalTxHash);
+    event SweptETH(
+        address indexed xDestination,
+        uint256 amount,
+        bytes32 canonicalTxHash
+    );
+    event SweptERC20(
+        address indexed l1Token,
+        uint256 amount,
+        address indexed xDestination,
+        bytes32 canonicalTxHash
+    );
 
     constructor(
         address bridgehub_,
@@ -67,26 +79,27 @@ contract StealthForwarderL1 {
 
     receive() external payable {}
 
-    function sweepETH(
-        uint256 mintValue,
-        uint256 l2Value,
-        uint256 l2GasLimit,
-        uint256 l2GasPerPubdataByteLimit
-    ) external {
-        require(msg.value == mintValue, "msg.value mismatch");
+    function sweepETH() external payable {
+        uint256 bal = address(this).balance;
+
         bytes[] memory deps = new bytes[](0);
-        bytes32 txHash = IBridgehub(bridgehub).requestL2TransactionDirect{value: msg.value}(
-            l2ChainId,
-            mintValue,
-            xDestination,
-            l2Value,
-            "",
-            l2GasLimit,
-            l2GasPerPubdataByteLimit,
-            deps,
-            refundRecipient
+        bytes32 txHash = IBridgehub(bridgehub).requestL2TransactionDirect{
+            value: bal
+        }(
+            IBridgehub.L2TransactionRequestDirect({
+                chainId: l2ChainId,
+                mintValue: bal,
+                l2Contract: xDestination,
+                l2Value: bal - msg.value,
+                l2Calldata: "",
+                l2GasLimit: 200000,
+                l2GasPerPubdataByteLimit: 800,
+                factoryDeps: deps,
+                refundRecipient: refundRecipient
+            })
         );
-        emit SweptETH(xDestination, l2Value, txHash);
+
+        emit SweptETH(xDestination, bal - msg.value, txHash);
     }
 
     function sweepERC20(
@@ -98,25 +111,40 @@ contract StealthForwarderL1 {
         uint256 l2GasPerPubdataByteLimit
     ) external payable {
         require(msg.value == mintValue, "msg.value mismatch");
-        require(IERC20(l1Token).approve(nativeTokenVault, amount), "approve failed");
+        require(
+            IERC20(l1Token).approve(nativeTokenVault, amount),
+            "approve failed"
+        );
 
-        bytes memory depositData = abi.encodeWithSignature("f(uint256,address,address)", amount, xDestination, address(0));
-        bytes memory encoded = abi.encodeWithSignature("f(bytes32,bytes)", tokenAssetId, depositData);
+        bytes memory depositData = abi.encodeWithSignature(
+            "f(uint256,address,address)",
+            amount,
+            xDestination,
+            address(0)
+        );
+        bytes memory encoded = abi.encodeWithSignature(
+            "f(bytes32,bytes)",
+            tokenAssetId,
+            depositData
+        );
         bytes memory bridgeCalldata = bytes.concat(hex"01", encoded);
 
-        IBridgehub.L2TransactionRequestTwoBridgesOuter memory req = IBridgehub.L2TransactionRequestTwoBridgesOuter({
-            chainId: l2ChainId,
-            mintValue: mintValue,
-            l2Value: 0,
-            l2GasLimit: l2GasLimit,
-            l2GasPerPubdataByteLimit: l2GasPerPubdataByteLimit,
-            refundRecipient: refundRecipient,
-            secondBridgeAddress: assetRouter,
-            secondBridgeValue: 0,
-            secondBridgeCalldata: bridgeCalldata
-        });
+        IBridgehub.L2TransactionRequestTwoBridgesOuter memory req = IBridgehub
+            .L2TransactionRequestTwoBridgesOuter({
+                chainId: l2ChainId,
+                mintValue: mintValue,
+                l2Value: 0,
+                l2GasLimit: l2GasLimit,
+                l2GasPerPubdataByteLimit: l2GasPerPubdataByteLimit,
+                refundRecipient: refundRecipient,
+                secondBridgeAddress: assetRouter,
+                secondBridgeValue: 0,
+                secondBridgeCalldata: bridgeCalldata
+            });
 
-        bytes32 txHash = IBridgehub(bridgehub).requestL2TransactionTwoBridges{value: msg.value}(req);
+        bytes32 txHash = IBridgehub(bridgehub).requestL2TransactionTwoBridges{
+            value: msg.value
+        }(req);
         IERC20(l1Token).approve(nativeTokenVault, 0);
         emit SweptERC20(l1Token, amount, xDestination, txHash);
     }

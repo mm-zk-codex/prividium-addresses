@@ -40,7 +40,7 @@ export const VAULT_FACTORY_ABI = parseAbi([
 ]);
 
 export const STEALTH_FORWARDER_L1_ABI = parseAbi([
-  'function sweepETH(uint256 mintValue,uint256 l2Value,uint256 l2GasLimit,uint256 l2GasPerPubdataByteLimit) payable',
+  'function sweepETH() payable',
   'function sweepERC20(address l1Token,uint256 amount,bytes32 tokenAssetId,uint256 mintValue,uint256 l2GasLimit,uint256 l2GasPerPubdataByteLimit) payable'
 ]);
 

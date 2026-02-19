@@ -67,7 +67,7 @@ async function tick() {
           address: y,
           abi: STEALTH_FORWARDER_L1_ABI,
           functionName: 'sweepETH',
-          args: [defaultMintEth, amount, gasEth, pubdata],
+          args: [],
           value: defaultMintEth
         });
         await publicClient.waitForTransactionReceipt({ hash: sweepTx });
