@@ -1,8 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom/client';
+import { aliasKeyFromParts, normalizeEmail } from '@prividium-poc/types';
+import { Layout } from './components/Layout';
+import { LoginGate } from './components/LoginGate';
+import { PrividiumAuthProvider, usePrividiumAuth } from './auth/PrividiumAuth';
 import './index.css';
 
 type AliasResult = 'match' | 'maybe_needs_suffix' | 'not_found';
+type Route = '/send' | '/portal';
 
 const TRACKING_COOKIE = 'last_tracking_id';
 
@@ -21,18 +26,57 @@ function clearCookie(name: string) {
 
 const shortAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
+function getInitialRoute(): Route {
+  return window.location.pathname.startsWith('/portal') ? '/portal' : '/send';
+}
+
 function App() {
   const resolver = import.meta.env.VITE_RESOLVER_URL ?? 'http://localhost:4000';
+  const auth = usePrividiumAuth();
+  const [route, setRoute] = useState<Route>(getInitialRoute());
+
+  const navigate = (to: Route) => {
+    if (window.location.pathname !== to) window.history.pushState({}, '', to);
+    setRoute(to);
+  };
+
+  useEffect(() => {
+    const onPopState = () => setRoute(getInitialRoute());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  return (
+    <Layout route={route} navigate={navigate}>
+      {route === '/portal' ? (
+        auth.isAuthenticated ? (
+          <PortalPage resolver={resolver} />
+        ) : (
+          <LoginGate onLogin={async () => {
+            await auth.login();
+            await auth.refresh();
+            navigate('/portal');
+          }} />
+        )
+      ) : (
+        <SendPage resolver={resolver} />
+      )}
+    </Layout>
+  );
+}
+
+function SendPage({ resolver }: { resolver: string }) {
   const [email, setEmail] = useState('');
   const [suffix, setSuffix] = useState('');
   const [showSuffix, setShowSuffix] = useState(false);
   const [message, setMessage] = useState('');
   const [req, setReq] = useState<any>(null);
   const [status, setStatus] = useState<any>(null);
+  const [support, setSupport] = useState<any>(null);
   const [acceptedTokens, setAcceptedTokens] = useState<any[]>([]);
 
   const trackingId = req?.trackingId;
-  const trackingLink = useMemo(() => (trackingId ? `${window.location.origin}?trackingId=${trackingId}` : ''), [trackingId]);
+  const trackingLink = useMemo(() => (trackingId ? `${window.location.origin}/send?trackingId=${trackingId}` : ''), [trackingId]);
 
   const loadTracking = async (id: string) => {
     const r = await fetch(`${resolver}/deposit/${id}`);
@@ -40,6 +84,9 @@ function App() {
     const data = await r.json();
     setReq({ trackingId: id, l1DepositAddress: data.request?.l1DepositAddressY, l2VaultAddress: data.request?.l2VaultAddressX });
     setStatus(data);
+
+    const supportResp = await fetch(`${resolver}/deposit/${id}/support`);
+    if (supportResp.ok) setSupport(await supportResp.json());
   };
 
   const requestDeposit = async (payload: { email: string; suffix?: string }) => {
@@ -55,6 +102,7 @@ function App() {
     }
     setReq(data);
     setStatus(null);
+    setSupport(null);
     setCookie(TRACKING_COOKIE, data.trackingId);
   };
 
@@ -82,6 +130,7 @@ function App() {
     clearCookie(TRACKING_COOKIE);
     setReq(null);
     setStatus(null);
+    setSupport(null);
   };
 
   useEffect(() => {
@@ -117,7 +166,7 @@ function App() {
       </ul>
       <input placeholder="recipient email" value={email} onChange={(e) => setEmail(e.target.value)} />
       {showSuffix && <input placeholder="suffix" value={suffix} onChange={(e) => setSuffix(e.target.value)} />}
-      <button onClick={continueFlow}>Continue</button>
+      <button onClick={() => void continueFlow()}>Continue</button>
       {message && <div className="text-xs text-amber-300">{message}</div>}
       {req && (
         <div className="space-y-2 text-sm">
@@ -128,7 +177,6 @@ function App() {
           <button onClick={generateNewAddress}>Generate new address</button>
           <img className="bg-white inline-block p-2 rounded" width={160} height={160} alt="Deposit address QR" src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(`ethereum:${req.l1DepositAddress}`)}`} />
           <div className="text-xs text-slate-300">Scan to pay</div>
-          <div className="text-xs text-slate-300">Only these ERC20 tokens are processed automatically.</div>
           <ul className="space-y-1 text-xs">
             {(status?.events ?? []).map((e: any) => (
               <li key={e.id} className="border border-slate-700 rounded p-2">
@@ -138,10 +186,92 @@ function App() {
               </li>
             ))}
           </ul>
+          <div className="border border-slate-700 rounded p-3 space-y-1 text-xs">
+            <h3 className="font-semibold text-sm">Support / troubleshooting</h3>
+            {support ? <pre className="whitespace-pre-wrap">{JSON.stringify(support, null, 2)}</pre> : <div className="text-slate-300">Support details appear here when available.</div>}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
+function PortalPage({ resolver }: { resolver: string }) {
+  const auth = usePrividiumAuth();
+  const [suffix, setSuffix] = useState('');
+  const [rows, setRows] = useState<any[]>([]);
+
+  const loadDeposits = async () => {
+    if (!auth.displayName) return;
+    const aliasKey = aliasKeyFromParts(normalizeEmail(auth.displayName), suffix.trim().toLowerCase());
+    const resp = await fetch(`${resolver}/alias/deposits?aliasKey=${aliasKey}`);
+    if (resp.ok) setRows(await resp.json());
+  };
+
+  useEffect(() => {
+    if (!auth.isAuthenticated) {
+      setRows([]);
+      return;
+    }
+    void loadDeposits();
+  }, [auth.isAuthenticated, auth.displayName, auth.walletAddress]);
+
+  const registerAlias = async () => {
+    const headers = { 'content-type': 'application/json', ...auth.authHeaders };
+    await fetch(`${resolver}/alias/register`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ suffix, recipientPrividiumAddress: auth.walletAddress })
+    });
+    await loadDeposits();
+  };
+
+  const retryEvent = async (eventId: number) => {
+    const headers = { 'content-type': 'application/json', ...auth.authHeaders };
+    await fetch(`${resolver}/deposit-events/${eventId}/retry`, { method: 'POST', headers, body: JSON.stringify({ suffix }) });
+    await loadDeposits();
+  };
+
+  const retryAllStuck = async () => {
+    const stuck = rows.flatMap((r) => (r.events ?? []).filter((e: any) => e.stuck));
+    for (const event of stuck) {
+      await retryEvent(event.id);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h1 className="text-xl font-bold">Prividium Recipient Portal</h1>
+      <div className="text-sm">Signed in as: {auth.displayName}</div>
+      <div className="break-all text-sm">Your wallet address: {auth.walletAddress}</div>
+      <input placeholder="optional suffix" value={suffix} onChange={(e) => setSuffix(e.target.value)} />
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={() => void registerAlias()}>Register alias</button>
+        <button onClick={() => void loadDeposits()}>Refresh deposit flow status</button>
+        <button onClick={() => void retryAllStuck()}>Retry all stuck</button>
+      </div>
+      <ul className="text-xs space-y-1">
+        {rows.map((r) => (
+          <li key={r.trackingId} className="border border-slate-700 rounded p-2">
+            <div>{r.trackingId}</div>
+            <div className="break-all">Y: {r.l1DepositAddressY}</div>
+            <div className="break-all">X: {r.l2VaultAddressX}</div>
+            {(r.events ?? []).map((e: any) => (
+              <div key={e.id} className={e.stuck ? 'bg-red-900/40 p-1 rounded mt-1' : 'mt-1'}>
+                <div>{e.kind} {e.amount} - {e.status}</div>
+                {e.stuck ? <div>stuck after {e.attempts} attempts; error: {e.error}</div> : null}
+                {e.stuck ? <button onClick={() => void retryEvent(e.id)}>Retry</button> : null}
+              </div>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <PrividiumAuthProvider>
+    <App />
+  </PrividiumAuthProvider>
+);
