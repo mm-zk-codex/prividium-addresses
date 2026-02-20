@@ -132,6 +132,7 @@ async function processDeposit(row: any) {
       return;
     }
   } catch (e) {
+    console.log(`Error processing deposit for trackingId ${row.trackingId}:`, e);
     if (eventId) updateEvent(eventId, 'failed', { error: String(e) });
   } finally {
     db.prepare('UPDATE deposit_requests SET inflightL1=0 WHERE trackingId=?').run(row.trackingId);

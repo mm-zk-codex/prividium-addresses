@@ -81,7 +81,7 @@ async function tick() {
       FROM deposit_events e
       JOIN deposit_requests dr ON dr.trackingId = e.trackingId
       JOIN aliases a ON a.aliasKey = dr.aliasKey
-      WHERE e.status='l1_bridging_submitted'
+      WHERE e.status='l1_bridging_submitted' OR e.status='l2_failed'
       ORDER BY e.createdAt ASC LIMIT 30`)
     .all() as any[];
 
@@ -89,7 +89,8 @@ async function tick() {
     try {
       await processSubmittedEvent(row, row, row.recipientPrividiumAddress);
     } catch (e) {
-      db.prepare('UPDATE deposit_events SET status=?, error=? WHERE id=?').run('failed', String(e), row.id);
+      console.log(`Error processing submitted event ${row.id} for trackingId ${row.trackingId}:`, e);
+      db.prepare('UPDATE deposit_events SET status=?, error=? WHERE id=?').run('l2_failed', String(e), row.id);
     }
   }
 }

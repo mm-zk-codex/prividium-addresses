@@ -1,8 +1,8 @@
 [
   {
-    "l1Address": "0x0000000000000000000000000000000000000000",
-    "symbol": "USDC",
-    "decimals": 6,
-    "name": "USD Coin"
+    "l1Address": "0xBa84da4af2Ed668EaB1c8b31b0ff2CD400F60c7a",
+    "symbol": "Ex1",
+    "decimals": 0,
+    "name": "Ex Token"
   }
 ]

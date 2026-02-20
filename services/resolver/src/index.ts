@@ -39,10 +39,10 @@ async function getAuthenticatedIdentity(req: express.Request): Promise<{ display
   const token = extractBearerToken(req);
   if (!token || !prividiumApiBaseUrl) throw new Error('missing auth');
 
-  const sessionResp = await fetch(`${prividiumApiBaseUrl}/api/auth/current-session`, { headers: { Authorization: `Bearer ${token}` } });
+  const sessionResp = await fetch(`${prividiumApiBaseUrl}/api/profiles/me`, { headers: { Authorization: `Bearer ${token}` } });
   if (!sessionResp.ok) throw new Error('invalid session');
 
-  const payload = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as any;
+  const payload = (await sessionResp.json()) as any;
   const displayName = payload?.displayName;
   if (!displayName || typeof displayName !== 'string') throw new Error('displayName missing in token');
   return { displayName };
@@ -72,6 +72,7 @@ app.post('/alias/register', async (req, res) => {
 
     res.json({ aliasKey, normalizedEmail, suffix: normalizedSuffix });
   } catch (e) {
+    console.log("error in /alias/register", e);
     res.status(401).json({ error: String(e) });
   }
 });
@@ -85,12 +86,6 @@ app.post('/deposit/request', async (req, res) => {
   const alias = db.prepare('SELECT * FROM aliases WHERE aliasKey=?').get(aliasKey) as any;
   if (!alias) return res.status(404).json({ error: 'Alias not registered' });
 
-  const existing = db
-    .prepare('SELECT * FROM deposit_requests WHERE aliasKey=? AND recipientPrividiumAddress=? ORDER BY createdAt DESC LIMIT 1')
-    .get(aliasKey, alias.recipientPrividiumAddress) as any;
-  if (existing) {
-    return res.json({ trackingId: existing.trackingId, l1DepositAddress: existing.l1DepositAddressY, l2VaultAddress: existing.l2VaultAddressX });
-  }
 
   const trackingId = uuidv4();
   const nonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
