@@ -6,8 +6,8 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 async function main() {
   const bridgehub = process.env.BRIDGEHUB_ADDRESS as `0x${string}` | undefined;
-  const l2ChainId = Number(process.env.L2_CHAIN_ID ?? process.env.PRIVIDIUM_CHAIN_ID ?? 0);
-  if (!l2ChainId) throw new Error('L2_CHAIN_ID (or PRIVIDIUM_CHAIN_ID) is required');
+  const l2ChainId = Number(process.env.L2_CHAIN_ID ?? 0);
+  if (!l2ChainId) throw new Error('L2_CHAIN_ID  is required');
 
   const { viem, network } = hre;
 
