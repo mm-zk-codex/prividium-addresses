@@ -121,7 +121,7 @@ async function processDeposit(row: any) {
             address: y,
             abi: STEALTH_FORWARDER_L1_ABI,
             functionName: 'sweepERC20',
-            args: [tokenAddr, bal, tokenAssetId, mint, gasErc20, pubdata],
+            args: [tokenAddr],
             value: mint
           }),
         defaultMintErc20

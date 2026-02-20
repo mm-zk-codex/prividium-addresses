@@ -106,17 +106,10 @@ contract StealthForwarderL1 {
         emit SweptETH(xDestination, bal - msg.value, txHash);
     }
 
-    function sweepERC20(
-        address l1Token,
-        uint256 _amount,
-        bytes32 _tokenAssetId,
-        uint256 mintValue,
-        uint256 _l2GasLimit,
-        uint256 _l2GasPerPubdataByteLimit
-    ) external payable {
-        require(msg.value == mintValue, "msg.value mismatch");
+    function sweepERC20(address l1Token) external payable {
         // Amount should be the full token balance.
         uint256 amount = IERC20(l1Token).balanceOf(address(this));
+        require(amount > 0, "empty");
 
         bytes32 tokenAssetId = NativeTokenVault(nativeTokenVault).assetId(
             l1Token
@@ -136,7 +129,7 @@ contract StealthForwarderL1 {
         IBridgehub.L2TransactionRequestTwoBridgesOuter memory req = IBridgehub
             .L2TransactionRequestTwoBridgesOuter({
                 chainId: l2ChainId,
-                mintValue: mintValue,
+                mintValue: msg.value,
                 l2Value: 0,
                 l2GasLimit: 2_000_000, // TODO: first deployment vs repeated.
                 l2GasPerPubdataByteLimit: 800,
