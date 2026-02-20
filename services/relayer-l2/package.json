@@ -11,7 +11,8 @@
     "@prividium-poc/types": "workspace:*",
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.5",
-    "viem": "^2.21.53"
+    "viem": "^2.21.53",
+    "@prividium-poc/config": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

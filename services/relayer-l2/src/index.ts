@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import dotenv from 'dotenv';
 import { ONE_WAY_VAULT_ABI, VAULT_FACTORY_ABI } from '@prividium-poc/types';
+import { loadBridgeConfig } from '@prividium-poc/config';
 import { createPublicClient, createWalletClient, erc20Abi, getAddress, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -17,14 +17,31 @@ const transport = http(rpc, { fetchOptions: jwt ? { headers: { Authorization: `B
 const publicClient = createPublicClient({ transport });
 const walletClient = createWalletClient({ transport, account: privateKeyToAccount(pk as `0x${string}`) });
 const db = new Database(process.env.SQLITE_PATH ?? resolve(process.cwd(), '../data/poc.db'));
-const cfg = JSON.parse(readFileSync(process.env.CONTRACTS_JSON_PATH ?? resolve(process.cwd(), '../../contracts/deployments/11155111.json'), 'utf8')) as any;
-const tokenMap = JSON.parse(process.env.L2_TOKEN_MAP_JSON ?? '{}') as Record<string, string>;
+const bridgeConfig = loadBridgeConfig();
+const tokenMap = Object.fromEntries(bridgeConfig.tokens.map((t) => [t.l1Address.toLowerCase(), t.l2Address]));
+const maxAttempts = Number(process.env.MAX_ATTEMPTS ?? 5);
+const baseDelaySeconds = Number(process.env.BASE_DELAY_SECONDS ?? 15);
+const maxDelaySeconds = Number(process.env.MAX_DELAY_SECONDS ?? 900);
+
+function computeNextAttemptAt(nowMs: number, attempts: number): number {
+  const delaySec = Math.min(2 ** attempts * baseDelaySeconds, maxDelaySeconds);
+  return nowMs + delaySec * 1000;
+}
+
+function markEventError(eventId: number, err: unknown) {
+  const row = db.prepare('SELECT attempts FROM deposit_events WHERE id=?').get(eventId) as any;
+  const attempts = Number(row?.attempts ?? 0) + 1;
+  const now = Date.now();
+  const stuck = attempts >= maxAttempts ? 1 : 0;
+  const nextAttemptAt = stuck ? now : computeNextAttemptAt(now, attempts);
+  db.prepare('UPDATE deposit_events SET status=?, error=?, attempts=?, nextAttemptAt=?, stuck=?, lastErrorAt=? WHERE id=?').run(stuck ? 'stuck' : 'l2_failed', String(err), attempts, nextAttemptAt, stuck, now, eventId);
+}
 
 async function ensureVaultAndSweep(x: `0x${string}`, saltX: string, recipient: string, kind: 'ETH' | 'ERC20', token?: string | null) {
   const code = await publicClient.getCode({ address: x });
   let deployTx: `0x${string}` | null = null;
   if (!code || code === '0x') {
-    deployTx = await walletClient.writeContract({ address: cfg.l2.vaultFactory, abi: VAULT_FACTORY_ABI, functionName: 'deployVault', args: [saltX, recipient] });
+    deployTx = await walletClient.writeContract({ address: bridgeConfig.l2.vaultFactory, abi: VAULT_FACTORY_ABI, functionName: 'deployVault', args: [saltX, recipient] });
     await publicClient.waitForTransactionReceipt({ hash: deployTx });
   }
 
@@ -52,61 +69,25 @@ async function processSubmittedEvent(event: any, request: any, recipient: string
   db.prepare('UPDATE deposit_requests SET lastActivityAt=? WHERE trackingId=?').run(Date.now(), request.trackingId);
 }
 
-async function reconcileRequest(request: any, recipient: string) {
-  const x = getAddress(request.l2VaultAddressX);
-  const ethBal = await publicClient.getBalance({ address: x });
-  if (ethBal > 0n) {
-    const eventId = Number(
-      db.prepare('INSERT INTO deposit_events(trackingId,kind,amount,status,note,createdAt) VALUES(?,?,?,?,?,?)').run(request.trackingId, 'ETH', ethBal.toString(), 'l2_arrived', 'reconciled', Date.now()).lastInsertRowid
-    );
-    const { deployTx, sweepTx } = await ensureVaultAndSweep(x, request.saltX, recipient, 'ETH');
-    db.prepare('UPDATE deposit_events SET status=?, l2DeployTxHash=?, l2SweepTxHash=? WHERE id=?').run('credited', deployTx, sweepTx, eventId);
-  }
-
-  for (const [l1Token, l2TokenRaw] of Object.entries(tokenMap)) {
-    const l2Token = getAddress(l2TokenRaw);
-    const bal = (await publicClient.readContract({ address: l2Token, abi: erc20Abi, functionName: 'balanceOf', args: [x] })) as bigint;
-    if (bal === 0n) continue;
-    const eventId = Number(
-      db.prepare('INSERT INTO deposit_events(trackingId,kind,l1TokenAddress,amount,status,note,createdAt) VALUES(?,?,?,?,?,?,?)').run(request.trackingId, 'ERC20', l1Token, bal.toString(), 'l2_arrived', 'reconciled', Date.now()).lastInsertRowid
-    );
-    const { deployTx, sweepTx } = await ensureVaultAndSweep(x, request.saltX, recipient, 'ERC20', l2Token);
-    db.prepare('UPDATE deposit_events SET status=?, l2DeployTxHash=?, l2SweepTxHash=? WHERE id=?').run('credited', deployTx, sweepTx, eventId);
-  }
-}
-
 async function tick() {
   const rows = db
     .prepare(`SELECT e.*, dr.saltX, dr.l2VaultAddressX, dr.trackingId, COALESCE(dr.recipientPrividiumAddress, a.recipientPrividiumAddress) AS recipientPrividiumAddress
       FROM deposit_events e
       JOIN deposit_requests dr ON dr.trackingId = e.trackingId
       JOIN aliases a ON a.aliasKey = dr.aliasKey
-      WHERE e.status='l1_bridging_submitted' OR e.status='l2_failed'
+      WHERE (e.status='l1_bridging_submitted' OR e.status='l2_failed') AND e.stuck=0 AND e.nextAttemptAt<=?
       ORDER BY e.createdAt ASC LIMIT 30`)
-    .all() as any[];
+    .all(Date.now()) as any[];
 
   for (const row of rows) {
     try {
       await processSubmittedEvent(row, row, row.recipientPrividiumAddress);
     } catch (e) {
       console.log(`Error processing submitted event ${row.id} for trackingId ${row.trackingId}:`, e);
-      db.prepare('UPDATE deposit_events SET status=?, error=? WHERE id=?').run('l2_failed', String(e), row.id);
-    }
-  }
-}
-
-async function safetyTick() {
-  const rows = db.prepare('SELECT dr.*, COALESCE(dr.recipientPrividiumAddress, a.recipientPrividiumAddress) AS recipientPrividiumAddress FROM deposit_requests dr JOIN aliases a ON a.aliasKey=dr.aliasKey WHERE dr.isActive=1').all() as any[];
-  for (const row of rows) {
-    try {
-      await reconcileRequest(row, row.recipientPrividiumAddress);
-    } catch {
-      // noop
+      markEventError(row.id, e);
     }
   }
 }
 
 setInterval(() => void tick(), Number(process.env.RELAYER_POLL_MS ?? 7000));
-setInterval(() => void safetyTick(), Number(process.env.RELAYER_L2_SAFETY_SCAN_MS ?? 300000));
 void tick();
-void safetyTick();

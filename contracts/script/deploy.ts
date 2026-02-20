@@ -42,7 +42,7 @@ async function main() {
 
   const payload = {
     l1: {
-      chainId: Number(network.config.chainId ?? 11155111),
+      chainId: Number(network.config.chainId ?? process.env.L1_CHAIN_ID ?? 11155111),
       forwarderFactoryL1: forwarderFactoryL1.address,
       bridgehub: bridgehub ?? '0x0000000000000000000000000000000000000000'
     },
