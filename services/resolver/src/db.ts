@@ -27,6 +27,7 @@ export function openDb(path: string) {
     CREATE TABLE IF NOT EXISTS deposit_requests (
       trackingId TEXT PRIMARY KEY,
       aliasKey TEXT NOT NULL,
+      recipientPrividiumAddress TEXT,
       l1DepositAddressY TEXT NOT NULL,
       l2VaultAddressX TEXT NOT NULL,
       saltY TEXT NOT NULL,
@@ -74,9 +75,21 @@ export function openDb(path: string) {
   ensureColumn(db, 'deposit_requests', 'inflightL1 INTEGER DEFAULT 0', 'inflightL1');
   ensureColumn(db, 'deposit_requests', 'inflightL2 INTEGER DEFAULT 0', 'inflightL2');
   ensureColumn(db, 'deposit_requests', 'isActive INTEGER DEFAULT 1', 'isActive');
+  ensureColumn(db, 'deposit_requests', 'recipientPrividiumAddress TEXT', 'recipientPrividiumAddress');
 
-  db.exec(`UPDATE deposit_requests SET createdAt = COALESCE(createdAt, issuedAt, strftime('%s','now')*1000)`);
+  if (hasColumn(db, 'deposit_requests', 'issuedAt')) {
+    db.exec(`UPDATE deposit_requests SET createdAt = COALESCE(createdAt, issuedAt, strftime('%s','now')*1000)`);
+  } else {
+    db.exec(`UPDATE deposit_requests SET createdAt = COALESCE(createdAt, strftime('%s','now')*1000)`);
+  }
   db.exec(`UPDATE deposit_requests SET lastActivityAt = COALESCE(lastActivityAt, createdAt)`);
+  db.exec(`
+    UPDATE deposit_requests
+    SET recipientPrividiumAddress = COALESCE(
+      recipientPrividiumAddress,
+      (SELECT a.recipientPrividiumAddress FROM aliases a WHERE a.aliasKey = deposit_requests.aliasKey)
+    )
+  `);
 
   return db;
 }

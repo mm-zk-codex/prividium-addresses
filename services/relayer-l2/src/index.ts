@@ -77,7 +77,7 @@ async function reconcileRequest(request: any, recipient: string) {
 
 async function tick() {
   const rows = db
-    .prepare(`SELECT e.*, dr.saltX, dr.l2VaultAddressX, dr.trackingId, a.recipientPrividiumAddress
+    .prepare(`SELECT e.*, dr.saltX, dr.l2VaultAddressX, dr.trackingId, COALESCE(dr.recipientPrividiumAddress, a.recipientPrividiumAddress) AS recipientPrividiumAddress
       FROM deposit_events e
       JOIN deposit_requests dr ON dr.trackingId = e.trackingId
       JOIN aliases a ON a.aliasKey = dr.aliasKey
@@ -95,7 +95,7 @@ async function tick() {
 }
 
 async function safetyTick() {
-  const rows = db.prepare('SELECT dr.*, a.recipientPrividiumAddress FROM deposit_requests dr JOIN aliases a ON a.aliasKey=dr.aliasKey WHERE dr.isActive=1').all() as any[];
+  const rows = db.prepare('SELECT dr.*, COALESCE(dr.recipientPrividiumAddress, a.recipientPrividiumAddress) AS recipientPrividiumAddress FROM deposit_requests dr JOIN aliases a ON a.aliasKey=dr.aliasKey WHERE dr.isActive=1').all() as any[];
   for (const row of rows) {
     try {
       await reconcileRequest(row, row.recipientPrividiumAddress);

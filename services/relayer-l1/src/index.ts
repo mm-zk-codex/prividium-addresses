@@ -140,7 +140,7 @@ async function processDeposit(row: any) {
 
 async function tick() {
   const rows = db
-    .prepare('SELECT dr.*, a.recipientPrividiumAddress FROM deposit_requests dr JOIN aliases a ON a.aliasKey = dr.aliasKey WHERE dr.isActive = 1 ORDER BY dr.lastActivityAt ASC LIMIT 30')
+    .prepare('SELECT dr.*, COALESCE(dr.recipientPrividiumAddress, a.recipientPrividiumAddress) AS recipientPrividiumAddress FROM deposit_requests dr JOIN aliases a ON a.aliasKey = dr.aliasKey WHERE dr.isActive = 1 ORDER BY dr.lastActivityAt ASC LIMIT 30')
     .all() as any[];
   for (const row of rows) await processDeposit(row);
 }

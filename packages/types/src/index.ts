@@ -15,6 +15,7 @@ export type DepositStatus = (typeof depositStatus)[number];
 export interface DepositRequestRow {
   trackingId: string;
   aliasKey: string;
+  recipientPrividiumAddress?: string;
   l1DepositAddressY: string;
   l2VaultAddressX: string;
   saltY: string;

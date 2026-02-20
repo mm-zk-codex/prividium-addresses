@@ -85,7 +85,9 @@ app.post('/deposit/request', async (req, res) => {
   const alias = db.prepare('SELECT * FROM aliases WHERE aliasKey=?').get(aliasKey) as any;
   if (!alias) return res.status(404).json({ error: 'Alias not registered' });
 
-  const existing = db.prepare('SELECT * FROM deposit_requests WHERE aliasKey=? ORDER BY createdAt DESC LIMIT 1').get(aliasKey) as any;
+  const existing = db
+    .prepare('SELECT * FROM deposit_requests WHERE aliasKey=? AND recipientPrividiumAddress=? ORDER BY createdAt DESC LIMIT 1')
+    .get(aliasKey, alias.recipientPrividiumAddress) as any;
   if (existing) {
     return res.json({ trackingId: existing.trackingId, l1DepositAddress: existing.l1DepositAddressY, l2VaultAddress: existing.l2VaultAddressX });
   }
@@ -105,8 +107,8 @@ app.post('/deposit/request', async (req, res) => {
   });
 
   const now = Date.now();
-  db.prepare(`INSERT INTO deposit_requests(trackingId, aliasKey, l1DepositAddressY, l2VaultAddressX, saltY, saltX, createdAt, lastActivityAt, inflightL1, inflightL2, isActive)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1)`).run(trackingId, aliasKey, y, x, saltY, saltX, now, now);
+  db.prepare(`INSERT INTO deposit_requests(trackingId, aliasKey, recipientPrividiumAddress, l1DepositAddressY, l2VaultAddressX, saltY, saltX, createdAt, lastActivityAt, inflightL1, inflightL2, isActive)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1)`).run(trackingId, aliasKey, alias.recipientPrividiumAddress, y, x, saltY, saltX, now, now);
 
   res.json({ trackingId, l1DepositAddress: y, l2VaultAddress: x });
 });
