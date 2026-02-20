@@ -27,14 +27,30 @@ const STATUS_LABELS: Record<string, string> = {
   failed: 'Needs attention'
 };
 
+const STATUS_STEP: Record<string, StepperStep> = {
+  detected_l1: 'deposit',
+  l1_forwarder_deployed: 'bridge',
+  l1_bridging_submitted: 'bridge',
+  l2_arrived: 'finalize',
+  l2_vault_deployed: 'finalize',
+  credited: 'complete'
+};
+
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  detected_l1: 'bg-amber-500/20 text-amber-200 border border-amber-400/30',
+  l1_forwarder_deployed: 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/30',
+  l1_bridging_submitted: 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/30',
+  l2_arrived: 'bg-blue-500/20 text-blue-200 border border-blue-400/30',
+  l2_vault_deployed: 'bg-blue-500/20 text-blue-200 border border-blue-400/30',
+  credited: 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30',
+  stuck: 'bg-red-500/20 text-red-200 border border-red-400/30',
+  l1_failed: 'bg-red-500/20 text-red-200 border border-red-400/30',
+  l2_failed: 'bg-red-500/20 text-red-200 border border-red-400/30'
+};
+
 const statusBadgeClass = (status: string, stuck?: boolean) => {
-  if (stuck) return 'bg-red-500/20 text-red-200 border border-red-400/30';
-  const normalized = status.toLowerCase();
-  if (normalized.includes('credited') || normalized.includes('complete')) return 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30';
-  if (normalized.includes('l2_arrived') || normalized.includes('final') || normalized.includes('vault')) return 'bg-blue-500/20 text-blue-200 border border-blue-400/30';
-  if (normalized.includes('bridg') || normalized.includes('forwarder') || normalized.includes('submitted')) return 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/30';
-  if (normalized.includes('detected') || normalized.includes('receive')) return 'bg-amber-500/20 text-amber-200 border border-amber-400/30';
-  return 'bg-slate-500/20 text-slate-200 border border-slate-400/30';
+  if (stuck) return STATUS_BADGE_CLASS.stuck;
+  return STATUS_BADGE_CLASS[status.toLowerCase()] ?? 'bg-slate-500/20 text-slate-200 border border-slate-400/30';
 };
 
 function setCookie(name: string, value: string, days = 30) {
@@ -62,11 +78,8 @@ const hasValue = (amount: unknown) => {
 
 const statusStep = (status?: string, stuck?: boolean): StepperStep => {
   if (stuck) return 'bridge';
-  const s = (status ?? '').toLowerCase();
-  if (s.includes('credited') || s.includes('complete')) return 'complete';
-  if (s.includes('l2_arrived') || s.includes('final') || s.includes('vault')) return 'finalize';
-  if (s.includes('bridg') || s.includes('forwarder') || s.includes('submitted')) return 'bridge';
-  return 'deposit';
+  const normalized = (status ?? '').toLowerCase();
+  return STATUS_STEP[normalized] ?? 'deposit';
 };
 
 function getInitialRoute(): Route {
