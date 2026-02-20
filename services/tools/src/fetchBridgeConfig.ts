@@ -23,6 +23,8 @@ const nativeTokenVaultAbi = parseAbi([
   'function ensureTokenIsRegistered(address token) returns (bytes32)'
 ]);
 
+const L2NativeTokenVault = `0x0000000000000000000000000000000000010004`;
+
 async function main() {
   const l1 = createPublicClient({ transport: http(l1Rpc) });
   const l2 = createPublicClient({ transport: http(l2Rpc) });
@@ -39,7 +41,7 @@ async function main() {
     ]);
 
     let assetId = (await l1.readContract({ address: nativeTokenVault, abi: nativeTokenVaultAbi, functionName: 'assetId', args: [l1Address] })) as `0x${string}`;
-    let l2Address = (await l2.readContract({ address: nativeTokenVault, abi: nativeTokenVaultAbi, functionName: 'tokenAddress', args: [assetId] })) as `0x${string}`;
+    let l2Address = (await l2.readContract({ address: L2NativeTokenVault, abi: nativeTokenVaultAbi, functionName: 'tokenAddress', args: [assetId] })) as `0x${string}`;
     if (l2Address === '0x0000000000000000000000000000000000000000' && autoRegister) {
       throw new Error('AUTO_REGISTER_TOKENS requires signer-enabled flow; unsupported in read-only script');
     }

@@ -1,14 +1,24 @@
 {
   "l1": {
-    "chainId": 11155111,
-    "bridgehub": "0x0000000000000000000000000000000000000001",
-    "assetRouter": "0x0000000000000000000000000000000000000002",
-    "nativeTokenVault": "0x0000000000000000000000000000000000000003",
-    "forwarderFactory": "0x0000000000000000000000000000000000000004"
+    "chainId": 31337,
+    "bridgehub": "0xAAb95DfC116D9D9D9dD931Cda1Fd4142dB135365",
+    "assetRouter": "0xe6438F51c0cb23fA454985C6AdFd6b5A634Cd79B",
+    "nativeTokenVault": "0x8e33D84723d161b79A2324FFF96393Ac63A85893",
+    "forwarderFactory": "0x36d75057143ED635218A1081cAeAe2E40902B79E"
   },
   "l2": {
-    "chainId": 10,
-    "vaultFactory": "0x0000000000000000000000000000000000000005"
+    "chainId": 6565,
+    "vaultFactory": "0x148C150e0ad545CC7cb871E592bF359df710d9ce",
+    "rpcUrl": "http://localhost:5050"
   },
-  "tokens": []
+  "tokens": [
+    {
+      "l1Address": "0xBa84da4af2Ed668EaB1c8b31b0ff2CD400F60c7a",
+      "symbol": "Ex1",
+      "name": "Ex Token",
+      "decimals": 0,
+      "assetId": "0xa08b8e85aa24f2603b1c0fd087a9a0459800aa82b7e3bc4c863848f6e39ff505",
+      "l2Address": "0x10D56310a280Dc4c3b9851bD002Fd0a3C788F8a8"
+    }
+  ]
 }
