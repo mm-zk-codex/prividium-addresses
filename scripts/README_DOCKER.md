@@ -79,6 +79,4 @@ docker run --rm -v prividium_config:/config -v $(pwd):/backup alpine tar czf /ba
 - `PRIVIDIUM_AUTH_BASE_URL`: Prividium auth/API base URL for SIWE + transaction authorization
 - `SIWE_DOMAIN`: SIWE domain value
 - `SIWE_CHAIN_ID`: L2 chain id used in SIWE auth
-- Optional compatibility vars (reserved for custom SIWE payloads): `SIWE_URI`, `SIWE_STATEMENT`, `SIWE_RESOURCES`
-
 No pre-issued `PRIVIDIUM_JWT` is required.

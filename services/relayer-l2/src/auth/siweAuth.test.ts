@@ -4,11 +4,11 @@ import { SiweAuthManager } from './siweAuth.js';
 
 const privateKey = '0x59c6995e998f97a5a0044966f094538c5f6270e8b0aa7d9d0ad2f83f5f0f8a5d' as const;
 
-test('SIWE auth token is cached in memory', async () => {
+test('service token is cached in memory', async () => {
   let nonceCalls = 0;
   let loginCalls = 0;
 
-  const fetchFn: typeof fetch = (async (input, init) => {
+  const fetchFn: typeof fetch = (async (input) => {
     const url = String(input);
     if (url.endsWith('/api/siwe-messages')) {
       nonceCalls += 1;
@@ -39,10 +39,10 @@ test('SIWE auth token is cached in memory', async () => {
   assert.equal(loginCalls, 1);
 });
 
-test('SIWE auth is cleared on 401/403 from authorizeTransaction endpoint', async () => {
+test('service token is cleared on 401 and re-login succeeds', async () => {
   let loginCalls = 0;
 
-  const fetchFn: typeof fetch = (async (input, init) => {
+  const fetchFn: typeof fetch = (async (input) => {
     const url = String(input);
     if (url.endsWith('/api/siwe-messages')) {
       return new Response(JSON.stringify({ msg: 'sign-me' }), { status: 200 });

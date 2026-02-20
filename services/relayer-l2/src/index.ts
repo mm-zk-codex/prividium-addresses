@@ -13,7 +13,7 @@ const pk = process.env.RELAYER_L2_PRIVATE_KEY as `0x${string}` | undefined;
 const proxyRpcUrl = process.env.PRIVIDIUM_PROXY_RPC_URL ?? process.env.L2_RPC_URL ?? process.env.RPC_URL_PRIVIDIUM;
 const authBaseUrl = process.env.PRIVIDIUM_AUTH_BASE_URL ?? process.env.PRIVIDIUM_API_BASE_URL;
 const chainId = Number(process.env.SIWE_CHAIN_ID ?? process.env.L2_CHAIN_ID ?? 260);
-const siweDomain = process.env.SIWE_DOMAIN ?? 'localhost:3000';
+const siweDomain = process.env.SIWE_DOMAIN || undefined;
 
 if (!pk || !proxyRpcUrl || !authBaseUrl) {
   throw new Error('RELAYER_L2_PRIVATE_KEY, PRIVIDIUM_PROXY_RPC_URL (or L2_RPC_URL), and PRIVIDIUM_AUTH_BASE_URL (or PRIVIDIUM_API_BASE_URL) are required');
@@ -24,10 +24,7 @@ const authManager = new SiweAuthManager({
   chainId,
   proxyRpcUrl,
   authBaseUrl,
-  siweDomain,
-  siweUri: process.env.SIWE_URI || undefined,
-  siweStatement: process.env.SIWE_STATEMENT || undefined,
-  siweResources: process.env.SIWE_RESOURCES ? process.env.SIWE_RESOURCES.split(",").map((x) => x.trim()).filter(Boolean) : undefined
+  siweDomain
 });
 const txSender = new PrividiumTxSender(authManager);
 

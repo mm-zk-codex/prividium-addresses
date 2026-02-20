@@ -11,10 +11,7 @@ type SiweAuthConfig = {
   chainId: number;
   proxyRpcUrl: string;
   authBaseUrl: string;
-  siweDomain: string;
-  siweUri?: string;
-  siweStatement?: string;
-  siweResources?: string[];
+  siweDomain?: string;
   fetchFn?: typeof fetch;
 };
 
@@ -26,50 +23,54 @@ type AuthorizeTxParams = {
   value?: bigint;
 };
 
+const SERVICE_TOKEN_TTL_MS = 55 * 60 * 1000;
+
+function getDomainFromUrl(url: string) {
+  return new URL(url).host;
+}
+
 export class SiweAuthManager {
   private readonly account;
   private readonly proxyRpcUrl: string;
   private readonly authBaseUrl: string;
   private readonly siweDomain: string;
-  private readonly chainId: number;
-  private readonly siweUri?: string;
-  private readonly siweStatement?: string;
-  private readonly siweResources?: string[];
   private readonly fetchFn: typeof fetch;
   private token: string | null = null;
-  private tokenExpiresAt: number | null = null;
+  private tokenExpiresAt = 0;
   private loginPromise: Promise<void> | null = null;
 
   constructor(config: SiweAuthConfig) {
     this.account = privateKeyToAccount(config.privateKey);
     this.proxyRpcUrl = config.proxyRpcUrl;
     this.authBaseUrl = config.authBaseUrl.replace(/\/$/, '');
-    this.siweDomain = config.siweDomain;
-    this.chainId = config.chainId;
-    this.siweUri = config.siweUri;
-    this.siweStatement = config.siweStatement;
-    this.siweResources = config.siweResources;
+    this.siweDomain = config.siweDomain || getDomainFromUrl(this.authBaseUrl);
     this.fetchFn = config.fetchFn ?? fetch;
+    void config.chainId;
   }
 
   getAddress() {
     return this.account.address;
   }
 
-  async ensureAuthorized() {
-    if (this.isTokenUsable()) return;
+  async getServiceToken() {
+    if (this.token && Date.now() < this.tokenExpiresAt) {
+      return this.token;
+    }
+
     if (!this.loginPromise) {
       this.loginPromise = this.login().finally(() => {
         this.loginPromise = null;
       });
     }
     await this.loginPromise;
+
+    if (!this.token) throw new Error('Failed to login service account');
+    return this.token;
   }
 
   async getAuthHeaders() {
-    await this.ensureAuthorized();
-    if (!this.token) throw new Error('Failed to acquire Prividium token');
-    return { Authorization: `Bearer ${this.token}` };
+    const token = await this.getServiceToken();
+    return { Authorization: `Bearer ${token}` };
   }
 
   async authorizeTransaction(params: AuthorizeTxParams) {
@@ -95,7 +96,7 @@ export class SiweAuthManager {
 
   clearToken() {
     this.token = null;
-    this.tokenExpiresAt = null;
+    this.tokenExpiresAt = 0;
   }
 
   isAuthError(error: unknown) {
@@ -124,40 +125,35 @@ export class SiweAuthManager {
     };
   }
 
-  private isTokenUsable() {
-    if (!this.token) return false;
-    if (!this.tokenExpiresAt) return true;
-    return Date.now() + 15_000 < this.tokenExpiresAt;
-  }
-
   private async login() {
-    const nonceRes = await this.fetchFn(`${this.authBaseUrl}/api/siwe-messages`, {
+    const msgRes = await this.fetchFn(`${this.authBaseUrl}/api/siwe-messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         address: this.account.address,
-        domain: this.siweDomain,
-        ...(this.siweUri ? { uri: this.siweUri } : {}),
-        ...(this.siweStatement ? { statement: this.siweStatement } : {}),
-        chainId: this.chainId,
-        ...(this.siweResources?.length ? { resources: this.siweResources } : {})
+        domain: this.siweDomain
       })
     });
-    if (!nonceRes.ok) throw new Error(`SIWE nonce request failed: ${nonceRes.status} ${await nonceRes.text()}`);
-    const nonceData = (await nonceRes.json()) as { msg?: string };
-    if (!nonceData.msg) throw new Error('SIWE nonce response missing msg');
+    if (!msgRes.ok) {
+      throw new Error('Failed to request SIWE message for service auth');
+    }
 
-    const signature = await this.account.signMessage({ message: nonceData.msg });
+    const { msg } = (await msgRes.json()) as { msg?: string };
+    if (!msg) throw new Error('SIWE nonce response missing msg');
+
+    const signature = await this.account.signMessage({ message: msg });
+
     const loginRes = await this.fetchFn(`${this.authBaseUrl}/api/auth/login/crypto-native`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: nonceData.msg, signature })
+      body: JSON.stringify({ message: msg, signature })
     });
-    if (!loginRes.ok) throw new Error(`SIWE login failed: ${loginRes.status} ${await loginRes.text()}`);
+    if (!loginRes.ok) throw new Error('Failed to login service account');
+
     const loginData = (await loginRes.json()) as { token?: string; expiresAt?: string };
     if (!loginData.token) throw new Error('SIWE login response missing token');
 
     this.token = loginData.token;
-    this.tokenExpiresAt = loginData.expiresAt ? Date.parse(loginData.expiresAt) : null;
+    this.tokenExpiresAt = loginData.expiresAt ? Date.parse(loginData.expiresAt) : Date.now() + SERVICE_TOKEN_TTL_MS;
   }
 }
