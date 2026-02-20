@@ -70,3 +70,15 @@ docker run --rm -v prividium_config:/config -v $(pwd):/backup alpine tar czf /ba
 - Relayer private keys must be provided by environment variables only.
 - Keep `.env` out of version control.
 - Nginx can be extended with request-rate limits for `/api` if needed.
+
+## Relayer L2 SIWE authentication
+
+`relayer-l2` now signs in programmatically with its own private key. Set these env vars in `.env`:
+
+- `PRIVIDIUM_PROXY_RPC_URL`: authenticated proxy RPC URL used for all L2 reads/writes
+- `PRIVIDIUM_AUTH_BASE_URL`: Prividium auth/API base URL for SIWE + transaction authorization
+- `SIWE_DOMAIN`: SIWE domain value
+- `SIWE_CHAIN_ID`: L2 chain id used in SIWE auth
+- Optional compatibility vars (reserved for custom SIWE payloads): `SIWE_URI`, `SIWE_STATEMENT`, `SIWE_RESOURCES`
+
+No pre-issued `PRIVIDIUM_JWT` is required.
