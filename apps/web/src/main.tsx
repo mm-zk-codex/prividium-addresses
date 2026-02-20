@@ -8,34 +8,32 @@ import './index.css';
 
 type AliasResult = 'match' | 'maybe_needs_suffix' | 'not_found';
 type Route = '/send' | '/portal';
-
 type StepperStep = 'deposit' | 'bridge' | 'finalize' | 'complete';
 
 const TRACKING_COOKIE = 'last_tracking_id';
 
 const STATUS_LABELS: Record<string, string> = {
+  detected_l1: 'Deposit received',
+  l1_forwarder_deployed: 'Preparing bridge',
+  l1_bridging_submitted: 'Bridging to Prividium',
+  l2_arrived: 'Finalizing',
+  l2_vault_deployed: 'Finalizing',
+  credited: 'Completed',
   pending: 'Pending',
-  observed: 'Deposit received',
-  received: 'Deposit received',
-  detected: 'Deposit received',
-  initiated: 'Bridging to Prividium',
-  proving: 'Bridging to Prividium',
-  proving_started: 'Bridging to Prividium',
-  relayed: 'Finalizing',
-  finalized: 'Completed',
-  completed: 'Completed',
-  failed: 'Needs attention',
+  stuck: 'Needs attention',
+  l1_failed: 'Needs attention',
+  l2_failed: 'Needs attention',
   error: 'Needs attention',
-  stuck: 'Needs attention'
+  failed: 'Needs attention'
 };
 
 const statusBadgeClass = (status: string, stuck?: boolean) => {
   if (stuck) return 'bg-red-500/20 text-red-200 border border-red-400/30';
   const normalized = status.toLowerCase();
-  if (normalized.includes('complete') || normalized.includes('finalized')) return 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30';
-  if (normalized.includes('final') || normalized.includes('relay')) return 'bg-blue-500/20 text-blue-200 border border-blue-400/30';
-  if (normalized.includes('bridge') || normalized.includes('init') || normalized.includes('prov')) return 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/30';
-  if (normalized.includes('observ') || normalized.includes('receive') || normalized.includes('detect')) return 'bg-amber-500/20 text-amber-200 border border-amber-400/30';
+  if (normalized.includes('credited') || normalized.includes('complete')) return 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30';
+  if (normalized.includes('l2_arrived') || normalized.includes('final') || normalized.includes('vault')) return 'bg-blue-500/20 text-blue-200 border border-blue-400/30';
+  if (normalized.includes('bridg') || normalized.includes('forwarder') || normalized.includes('submitted')) return 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/30';
+  if (normalized.includes('detected') || normalized.includes('receive')) return 'bg-amber-500/20 text-amber-200 border border-amber-400/30';
   return 'bg-slate-500/20 text-slate-200 border border-slate-400/30';
 };
 
@@ -54,13 +52,20 @@ function clearCookie(name: string) {
 
 const shortAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 const normalizeStatus = (status?: string) => STATUS_LABELS[(status ?? '').toLowerCase()] ?? 'In progress';
+const hasValue = (amount: unknown) => {
+  try {
+    return BigInt(String(amount ?? '0')) > 0n;
+  } catch {
+    return false;
+  }
+};
 
 const statusStep = (status?: string, stuck?: boolean): StepperStep => {
   if (stuck) return 'bridge';
   const s = (status ?? '').toLowerCase();
-  if (s.includes('complete') || s.includes('finalized')) return 'complete';
-  if (s.includes('final') || s.includes('relay')) return 'finalize';
-  if (s.includes('bridge') || s.includes('prov') || s.includes('init')) return 'bridge';
+  if (s.includes('credited') || s.includes('complete')) return 'complete';
+  if (s.includes('l2_arrived') || s.includes('final') || s.includes('vault')) return 'finalize';
+  if (s.includes('bridg') || s.includes('forwarder') || s.includes('submitted')) return 'bridge';
   return 'deposit';
 };
 
@@ -111,9 +116,7 @@ function FlowStepper({ events }: { events: any[] }) {
     { key: 'complete', label: 'Completed', icon: '✅' }
   ] as const;
 
-  const activeIndex = events.length
-    ? Math.max(...events.map((e) => steps.findIndex((s) => s.key === statusStep(e.status, e.stuck))))
-    : 0;
+  const activeIndex = Math.max(0, ...events.map((e) => steps.findIndex((s) => s.key === statusStep(e.status, e.stuck))));
 
   return (
     <div className="space-y-3">
@@ -145,10 +148,12 @@ function SendPage({ resolver }: { resolver: string }) {
   const [support, setSupport] = useState<any>(null);
   const [supportAvailable, setSupportAvailable] = useState<boolean | null>(null);
   const [acceptedTokens, setAcceptedTokens] = useState<any[]>([]);
+  const [lastPayload, setLastPayload] = useState<{ email: string; suffix?: string } | null>(null);
 
   const trackingId = req?.trackingId;
   const trackingLink = useMemo(() => (trackingId ? `${window.location.origin}/send?trackingId=${trackingId}` : ''), [trackingId]);
   const events = status?.events ?? [];
+  const transferEvents = events.filter((e: any) => hasValue(e.amount));
 
   const loadTracking = async (id: string) => {
     const r = await fetch(`${resolver}/deposit/${id}`);
@@ -183,6 +188,7 @@ function SendPage({ resolver }: { resolver: string }) {
       setMessage(data.error ?? 'Unable to generate');
       return;
     }
+    setLastPayload(payload);
     setReq(data);
     setStatus(null);
     setSupport(null);
@@ -209,12 +215,17 @@ function SendPage({ resolver }: { resolver: string }) {
     setMessage('Recipient may need to register in Prividium before receiving deposits.');
   };
 
-  const generateNewAddress = () => {
+  const generateNewAddress = async () => {
     clearCookie(TRACKING_COOKIE);
+    if (lastPayload) {
+      await requestDeposit(lastPayload);
+      return;
+    }
     setReq(null);
     setStatus(null);
     setSupport(null);
     setSupportAvailable(null);
+    setMessage('Enter recipient details and continue to generate a new address.');
   };
 
   useEffect(() => {
@@ -243,7 +254,7 @@ function SendPage({ resolver }: { resolver: string }) {
     void loadSupport(trackingId);
   }, [trackingId]);
 
-  const hasStuckEvent = events.some((e: any) => e.stuck);
+  const hasStuckEvent = transferEvents.some((e: any) => e.stuck);
 
   return (
     <div className="card space-y-6">
@@ -266,6 +277,7 @@ function SendPage({ resolver }: { resolver: string }) {
             <div key={t.l1Address} className="border border-slate-700 rounded-xl p-3 bg-slate-900/30">
               <div className="font-semibold">{t.symbol}</div>
               <div className="text-sm text-slate-300">{t.name}</div>
+              <div className="text-xs text-slate-400 font-mono break-all mt-1">{t.l1Address}</div>
             </div>
           ))}
         </div>
@@ -279,7 +291,7 @@ function SendPage({ resolver }: { resolver: string }) {
             <div className="flex flex-wrap gap-2 mt-3">
               <button className="btn-primary" onClick={() => navigator.clipboard.writeText(req.l1DepositAddress)}>Copy address</button>
               <button className="btn-secondary" onClick={() => navigator.clipboard.writeText(trackingLink)}>Copy tracking link</button>
-              <button className="btn-secondary" onClick={generateNewAddress}>Generate new address</button>
+              <button className="btn-secondary" onClick={() => void generateNewAddress()}>Generate new address</button>
             </div>
             <div className="mt-4 flex items-center gap-4 flex-wrap">
               <img className="bg-white inline-block p-2 rounded" width={160} height={160} alt="Deposit address QR" src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(`ethereum:${req.l1DepositAddress}`)}`} />
@@ -288,7 +300,7 @@ function SendPage({ resolver }: { resolver: string }) {
             <div className="text-xs text-slate-400 mt-3">Details: tracking ID {req.trackingId}</div>
           </div>
 
-          <FlowStepper events={events} />
+          {transferEvents.length > 0 ? <FlowStepper events={transferEvents} /> : null}
 
           <details className="border border-slate-700 rounded-xl p-3 bg-slate-900/30">
             <summary className="cursor-pointer text-sm font-semibold">Deposit history</summary>
@@ -377,16 +389,12 @@ function PortalPage({ resolver }: { resolver: string }) {
 
   const retryAllStuck = async () => {
     const stuck = rows.flatMap((r) => (r.events ?? []).filter((e: any) => e.stuck));
-    for (const event of stuck) {
-      await retryEvent(event.id);
-    }
+    for (const event of stuck) await retryEvent(event.id);
   };
 
   const grouped = rows.reduce((acc: Record<string, any>, row) => {
     const key = row.l1DepositAddressY ?? 'unknown';
-    if (!acc[key]) {
-      acc[key] = { address: row.l1DepositAddressY, alias: row.alias ?? auth.displayName, vault: row.l2VaultAddressX, rows: [] as any[] };
-    }
+    if (!acc[key]) acc[key] = { address: row.l1DepositAddressY, alias: row.alias ?? auth.displayName, rows: [] as any[] };
     acc[key].rows.push(row);
     return acc;
   }, {});
@@ -406,9 +414,10 @@ function PortalPage({ resolver }: { resolver: string }) {
       <div className="space-y-4">
         {Object.values(grouped).map((group: any) => {
           const events = group.rows.flatMap((r: any) => r.events ?? []);
-          const totals = events.reduce((acc: Record<string, number>, e: any) => {
+          const totals = events.reduce((acc: Record<string, bigint>, e: any) => {
+            if (!hasValue(e.amount)) return acc;
             const asset = e.l1TokenAddress ? shortAddress(e.l1TokenAddress) : 'ETH';
-            acc[asset] = (acc[asset] ?? 0) + Number(e.amount ?? 0);
+            acc[asset] = (acc[asset] ?? 0n) + BigInt(String(e.amount));
             return acc;
           }, {});
 
@@ -424,7 +433,7 @@ function PortalPage({ resolver }: { resolver: string }) {
 
               <div className="flex flex-wrap gap-2 text-xs">
                 {Object.entries(totals).map(([asset, amount]) => (
-                  <span key={asset} className="px-2 py-1 rounded-full bg-slate-800 border border-slate-700">{asset}: {amount as number}</span>
+                  <span key={asset} className="px-2 py-1 rounded-full bg-slate-800 border border-slate-700">{asset}: {String(amount)}</span>
                 ))}
                 {Object.keys(totals).length === 0 ? <span className="text-slate-400">No deposits yet.</span> : null}
               </div>
