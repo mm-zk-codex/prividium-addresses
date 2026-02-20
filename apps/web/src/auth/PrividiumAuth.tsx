@@ -59,14 +59,7 @@ export function PrividiumAuthProvider({ children }: { children: React.ReactNode 
 
   const logout = async () => {
     clear();
-    if (prividium.isAuthorized()) {
-      try {
-        const maybeLogout = (prividium as any).logout;
-        if (typeof maybeLogout === 'function') await maybeLogout.call(prividium);
-      } catch {
-        // no-op
-      }
-    }
+    prividium.unauthorize();
   };
 
   useEffect(() => {

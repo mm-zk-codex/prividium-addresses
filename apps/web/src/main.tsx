@@ -73,6 +73,7 @@ function SendPage({ resolver }: { resolver: string }) {
   const [req, setReq] = useState<any>(null);
   const [status, setStatus] = useState<any>(null);
   const [support, setSupport] = useState<any>(null);
+  const [supportAvailable, setSupportAvailable] = useState<boolean | null>(null);
   const [acceptedTokens, setAcceptedTokens] = useState<any[]>([]);
 
   const trackingId = req?.trackingId;
@@ -84,9 +85,20 @@ function SendPage({ resolver }: { resolver: string }) {
     const data = await r.json();
     setReq({ trackingId: id, l1DepositAddress: data.request?.l1DepositAddressY, l2VaultAddress: data.request?.l2VaultAddressX });
     setStatus(data);
+  };
 
+  const loadSupport = async (id: string) => {
+    if (supportAvailable === false) return;
     const supportResp = await fetch(`${resolver}/deposit/${id}/support`);
-    if (supportResp.ok) setSupport(await supportResp.json());
+    if (supportResp.ok) {
+      setSupport(await supportResp.json());
+      setSupportAvailable(true);
+      return;
+    }
+    if (supportResp.status === 404) {
+      setSupportAvailable(false);
+      setSupport(null);
+    }
   };
 
   const requestDeposit = async (payload: { email: string; suffix?: string }) => {
@@ -131,6 +143,7 @@ function SendPage({ resolver }: { resolver: string }) {
     setReq(null);
     setStatus(null);
     setSupport(null);
+    setSupportAvailable(null);
   };
 
   useEffect(() => {
@@ -152,6 +165,11 @@ function SendPage({ resolver }: { resolver: string }) {
       await loadTracking(trackingId);
     }, 2500);
     return () => clearInterval(it);
+  }, [trackingId]);
+
+  useEffect(() => {
+    if (!trackingId) return;
+    void loadSupport(trackingId);
   }, [trackingId]);
 
   return (
@@ -188,7 +206,13 @@ function SendPage({ resolver }: { resolver: string }) {
           </ul>
           <div className="border border-slate-700 rounded p-3 space-y-1 text-xs">
             <h3 className="font-semibold text-sm">Support / troubleshooting</h3>
-            {support ? <pre className="whitespace-pre-wrap">{JSON.stringify(support, null, 2)}</pre> : <div className="text-slate-300">Support details appear here when available.</div>}
+            {support ? (
+              <pre className="whitespace-pre-wrap">{JSON.stringify(support, null, 2)}</pre>
+            ) : supportAvailable === false ? (
+              <div className="text-slate-300">Support endpoint is not enabled on this deployment.</div>
+            ) : (
+              <div className="text-slate-300">Support details appear here when available.</div>
+            )}
           </div>
         </div>
       )}
