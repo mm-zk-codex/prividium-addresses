@@ -14,6 +14,7 @@ if (!pk || !rpc) throw new Error('RELAYER_L1_PRIVATE_KEY and L1_RPC_URL required
 
 const bridgeConfig = loadBridgeConfig();
 const db = new Database(process.env.SQLITE_PATH ?? resolve(process.cwd(), '../data/poc.db'));
+db.pragma('busy_timeout = 5000');
 const supportedTokens = loadSupportedTokens(process.env.BRIDGE_CONFIG_JSON_PATH ?? resolve(process.cwd(), '../../infra/bridge-config.json'));
 const tokenAllowlist = toTokenAllowlist(supportedTokens);
 const account = privateKeyToAccount(pk as `0x${string}`);
@@ -92,6 +93,7 @@ async function processDeposit(row: any) {
     if (!code || code === '0x') {
       const refundRecipient = process.env.REFUND_RECIPIENT_L2 ?? row.recipientPrividiumAddress;
       deployTx = await walletClient.writeContract({
+        chain: null,
         address: bridgeConfig.l1.forwarderFactory,
         abi: FORWARDER_FACTORY_L1_ABI,
         functionName: 'deploy',
@@ -104,7 +106,7 @@ async function processDeposit(row: any) {
     if (ethBal > 0n) {
       eventId = createEvent(row.trackingId, 'ETH', ethBal);
       if (deployTx) updateEvent(eventId, 'l1_forwarder_deployed', { l1DeployTxHash: deployTx });
-      const sweepTx = await withMintRetry((mint) => walletClient.writeContract({ address: y, abi: STEALTH_FORWARDER_L1_ABI, functionName: 'sweepETH', args: [], value: mint }), defaultMintEth);
+      const sweepTx = await withMintRetry((mint) => walletClient.writeContract({ chain: null, address: y, abi: STEALTH_FORWARDER_L1_ABI, functionName: 'sweepETH', args: [], value: mint }), defaultMintEth);
       await publicClient.waitForTransactionReceipt({ hash: sweepTx });
       updateEvent(eventId, 'l1_bridging_submitted', { l1BridgeTxHash: sweepTx });
       db.prepare('UPDATE deposit_requests SET lastActivityAt=? WHERE trackingId=?').run(Date.now(), row.trackingId);
@@ -117,6 +119,7 @@ async function processDeposit(row: any) {
       const sweepTx = await withMintRetry(
         (mint) =>
           walletClient.writeContract({
+            chain: null,
             address: y,
             abi: STEALTH_FORWARDER_L1_ABI,
             functionName: 'sweepERC20',

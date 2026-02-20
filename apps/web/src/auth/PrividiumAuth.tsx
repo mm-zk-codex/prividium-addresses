@@ -20,10 +20,10 @@ const chain = defineChain({
 });
 
 const prividium = createPrividiumChain({
-  clientId: import.meta.env.VITE_PRIVIDIUM_CLIENT_ID,
+  clientId: import.meta.env.VITE_PRIVIDIUM_CLIENT_ID!,
   chain,
-  authBaseUrl: import.meta.env.VITE_PRIVIDIUM_AUTH_BASE_URL,
-  prividiumApiBaseUrl: import.meta.env.VITE_PRIVIDIUM_API_BASE_URL,
+  authBaseUrl: import.meta.env.VITE_PRIVIDIUM_AUTH_BASE_URL!,
+  prividiumApiBaseUrl: import.meta.env.VITE_PRIVIDIUM_API_BASE_URL!,
   redirectUrl: `${window.location.origin}/auth/callback.html`
 });
 
@@ -45,7 +45,7 @@ export function PrividiumAuthProvider({ children }: { children: React.ReactNode 
     }
     try {
       const user = await prividium.fetchUser();
-      setWalletAddress(user.wallets?.[0]?.walletAddress ?? '');
+      setWalletAddress((user.wallets?.[0] as any)?.walletAddress ?? '');
       setDisplayName(user.displayName ?? '');
     } catch {
       clear();

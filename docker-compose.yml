@@ -1,0 +1,123 @@
+services:
+  resolver:
+    build:
+      context: .
+      target: resolver
+    environment:
+      NODE_ENV: production
+      SQLITE_PATH: /data/db.sqlite
+      BRIDGE_CONFIG_JSON_PATH: /config/bridge-config.json
+      RESOLVER_PORT: ${RESOLVER_PORT:-4000}
+      L1_RPC_URL: ${L1_RPC_URL}
+      L2_RPC_URL: ${L2_RPC_URL}
+      PRIVIDIUM_API_BASE_URL: ${PRIVIDIUM_API_BASE_URL:-}
+      PRIVIDIUM_AUTH_BASE_URL: ${PRIVIDIUM_AUTH_BASE_URL:-}
+      PRIVIDIUM_CLIENT_ID: ${PRIVIDIUM_CLIENT_ID:-}
+    volumes:
+      - prividium_db:/data
+      - prividium_config:/config
+    expose:
+      - "4000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  relayer-l1:
+    build:
+      context: .
+      target: relayer-l1
+    environment:
+      NODE_ENV: production
+      SQLITE_PATH: /data/db.sqlite
+      BRIDGE_CONFIG_JSON_PATH: /config/bridge-config.json
+      L1_RPC_URL: ${L1_RPC_URL}
+      RELAYER_L1_PRIVATE_KEY: ${RELAYER_L1_PRIVATE_KEY}
+      MINT_VALUE_WEI_ETH_DEFAULT: ${MINT_VALUE_WEI_ETH_DEFAULT:-2000000000000000}
+      MINT_VALUE_WEI_ERC20_DEFAULT: ${MINT_VALUE_WEI_ERC20_DEFAULT:-3000000000000000}
+      MAX_ATTEMPTS: ${MAX_ATTEMPTS:-5}
+      BASE_DELAY_SECONDS: ${BASE_DELAY_SECONDS:-15}
+      MAX_DELAY_SECONDS: ${MAX_DELAY_SECONDS:-900}
+      RELAYER_POLL_MS: ${RELAYER_POLL_MS:-7000}
+    volumes:
+      - prividium_db:/data
+      - prividium_config:/config
+    depends_on:
+      resolver:
+        condition: service_healthy
+    restart: unless-stopped
+
+  relayer-l2:
+    build:
+      context: .
+      target: relayer-l2
+    environment:
+      NODE_ENV: production
+      SQLITE_PATH: /data/db.sqlite
+      BRIDGE_CONFIG_JSON_PATH: /config/bridge-config.json
+      L2_RPC_URL: ${L2_RPC_URL}
+      RELAYER_L2_PRIVATE_KEY: ${RELAYER_L2_PRIVATE_KEY}
+      PRIVIDIUM_JWT: ${PRIVIDIUM_JWT:-}
+      MAX_ATTEMPTS: ${MAX_ATTEMPTS:-5}
+      BASE_DELAY_SECONDS: ${BASE_DELAY_SECONDS:-15}
+      MAX_DELAY_SECONDS: ${MAX_DELAY_SECONDS:-900}
+      RELAYER_POLL_MS: ${RELAYER_POLL_MS:-7000}
+    volumes:
+      - prividium_db:/data
+      - prividium_config:/config
+    depends_on:
+      resolver:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: web
+      args:
+        VITE_RESOLVER_URL: /api
+        VITE_PRIVIDIUM_CLIENT_ID: ${PRIVIDIUM_CLIENT_ID}
+        VITE_PRIVIDIUM_RPC_URL: ${VITE_PRIVIDIUM_RPC_URL}
+        VITE_PRIVIDIUM_AUTH_BASE_URL: ${VITE_PRIVIDIUM_AUTH_BASE_URL}
+        VITE_PRIVIDIUM_API_BASE_URL: ${VITE_PRIVIDIUM_API_BASE_URL}
+    depends_on:
+      resolver:
+        condition: service_healthy
+    ports:
+      - "5173:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  fetch-bridge-config:
+    build:
+      context: .
+      target: build-tools
+    profiles: ["init"]
+    environment:
+      NODE_ENV: production
+      BRIDGE_CONFIG_JSON_PATH: /config/bridge-config.json
+      SUPPORTED_ERC20_JSON_PATH: /config/supported-erc20.json
+      CONTRACTS_JSON_PATH: /config/contracts.json
+      BRIDGEHUB_ADDRESS: ${BRIDGEHUB_ADDRESS}
+      RELAYER_L1_PRIVATE_KEY: ${RELAYER_L1_PRIVATE_KEY}
+      L2_DEPLOYER_PRIVATE_KEY: ${L2_DEPLOYER_PRIVATE_KEY}
+      L1_CHAIN_ID: ${L1_CHAIN_ID}
+      L2_CHAIN_ID: ${L2_CHAIN_ID}
+      L1_RPC_URL: ${L1_RPC_URL}
+      L2_RPC_URL: ${L2_RPC_URL}
+      AUTO_REGISTER_TOKENS: ${AUTO_REGISTER_TOKENS:-0}
+      STRICT_TOKEN_MAPPING: ${STRICT_TOKEN_MAPPING:-1}
+    volumes:
+      - prividium_config:/config
+      - ./infra/supported-erc20.json:/config/supported-erc20.json:ro
+    command: ["sh", "contracts/setup.sh"]
+
+volumes:
+  prividium_db:
+  prividium_config:

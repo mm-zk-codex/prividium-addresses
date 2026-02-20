@@ -17,6 +17,7 @@ const transport = http(rpc, { fetchOptions: jwt ? { headers: { Authorization: `B
 const publicClient = createPublicClient({ transport });
 const walletClient = createWalletClient({ transport, account: privateKeyToAccount(pk as `0x${string}`) });
 const db = new Database(process.env.SQLITE_PATH ?? resolve(process.cwd(), '../data/poc.db'));
+db.pragma('busy_timeout = 5000');
 const bridgeConfig = loadBridgeConfig();
 const tokenMap = Object.fromEntries(bridgeConfig.tokens.map((t) => [t.l1Address.toLowerCase(), t.l2Address]));
 const maxAttempts = Number(process.env.MAX_ATTEMPTS ?? 5);
@@ -37,15 +38,16 @@ function markEventError(eventId: number, err: unknown) {
   db.prepare('UPDATE deposit_events SET status=?, error=?, attempts=?, nextAttemptAt=?, stuck=?, lastErrorAt=? WHERE id=?').run(stuck ? 'stuck' : 'l2_failed', String(err), attempts, nextAttemptAt, stuck, now, eventId);
 }
 
-async function ensureVaultAndSweep(x: `0x${string}`, saltX: string, recipient: string, kind: 'ETH' | 'ERC20', token?: string | null) {
+async function ensureVaultAndSweep(x: `0x${string}`, saltX: `0x${string}`, recipient: `0x${string}`, kind: 'ETH' | 'ERC20', token?: string | null) {
   const code = await publicClient.getCode({ address: x });
   let deployTx: `0x${string}` | null = null;
   if (!code || code === '0x') {
-    deployTx = await walletClient.writeContract({ address: bridgeConfig.l2.vaultFactory, abi: VAULT_FACTORY_ABI, functionName: 'deployVault', args: [saltX, recipient] });
+    deployTx = await walletClient.writeContract({ chain: null, address: bridgeConfig.l2.vaultFactory, abi: VAULT_FACTORY_ABI, functionName: 'deployVault', args: [saltX, recipient] });
     await publicClient.waitForTransactionReceipt({ hash: deployTx });
   }
 
   const sweepTx = await walletClient.writeContract({
+    chain: null,
     address: x,
     abi: ONE_WAY_VAULT_ABI,
     functionName: kind === 'ETH' ? 'sweepETH' : 'sweepERC20',
@@ -55,7 +57,7 @@ async function ensureVaultAndSweep(x: `0x${string}`, saltX: string, recipient: s
   return { deployTx, sweepTx };
 }
 
-async function processSubmittedEvent(event: any, request: any, recipient: string) {
+async function processSubmittedEvent(event: any, request: any, recipient: `0x${string}`) {
   const x = getAddress(request.l2VaultAddressX);
   const kind = event.kind as 'ETH' | 'ERC20';
   const l2Token = kind === 'ERC20' ? getAddress(tokenMap[(event.l1TokenAddress ?? '').toLowerCase()] ?? event.l1TokenAddress) : null;

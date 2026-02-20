@@ -14,6 +14,8 @@ function ensureColumn(db: Database.Database, table: string, columnDef: string, c
 export function openDb(path: string) {
   const db = new Database(path);
   db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+  db.pragma('busy_timeout = 5000');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS aliases (

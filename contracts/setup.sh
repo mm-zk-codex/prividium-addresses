@@ -1,0 +1,1 @@
+pnpm --filter contracts build && pnpm --filter contracts run deploy && pnpm --filter contracts exec hardhat run script/fetchBridgeDeps.ts --network sepolia && pnpm --filter tools run fetch-bridge-config

@@ -14,14 +14,14 @@ export type BridgeTokenConfig = {
 export type BridgeConfig = {
   l1: {
     chainId: number;
-    bridgehub: string;
-    assetRouter: string;
-    nativeTokenVault: string;
-    forwarderFactory: string;
+    bridgehub: `0x${string}`;
+    assetRouter: `0x${string}`;
+    nativeTokenVault: `0x${string}`;
+    forwarderFactory: `0x${string}`;
   };
   l2: {
     chainId: number;
-    vaultFactory: string;
+    vaultFactory: `0x${string}`;
     rpcUrl?: string;
   };
   tokens: BridgeTokenConfig[];
