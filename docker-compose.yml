@@ -13,6 +13,8 @@ services:
       PRIVIDIUM_API_BASE_URL: ${PRIVIDIUM_API_BASE_URL:-}
       PRIVIDIUM_AUTH_BASE_URL: ${PRIVIDIUM_AUTH_BASE_URL:-}
       PRIVIDIUM_CLIENT_ID: ${PRIVIDIUM_CLIENT_ID:-}
+      SIWE_DOMAIN: ${SIWE_DOMAIN}
+      RELAYER_L2_PRIVATE_KEY: ${RELAYER_L2_PRIVATE_KEY}
     volumes:
       - prividium_db:/data
       - prividium_config:/config
@@ -64,6 +66,8 @@ services:
       BASE_DELAY_SECONDS: ${BASE_DELAY_SECONDS:-15}
       MAX_DELAY_SECONDS: ${MAX_DELAY_SECONDS:-900}
       RELAYER_POLL_MS: ${RELAYER_POLL_MS:-7000}
+      SIWE_DOMAIN: ${SIWE_DOMAIN}
+      PRIVIDIUM_API_BASE_URL: ${PRIVIDIUM_API_BASE_URL}
     volumes:
       - prividium_db:/data
       - prividium_config:/config
@@ -113,6 +117,8 @@ services:
       L2_RPC_URL: ${L2_RPC_URL}
       AUTO_REGISTER_TOKENS: ${AUTO_REGISTER_TOKENS:-0}
       STRICT_TOKEN_MAPPING: ${STRICT_TOKEN_MAPPING:-1}
+      SIWE_DOMAIN: ${SIWE_DOMAIN}
+      PRIVIDIUM_API_BASE_URL: ${PRIVIDIUM_API_BASE_URL}
     volumes:
       - prividium_config:/config
       - ./infra/supported-erc20.json:/config/supported-erc20.json:ro

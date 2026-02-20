@@ -11,9 +11,10 @@ dotenv.config({ path: resolve(process.cwd(), '../../infra/.env') });
 const pk = process.env.RELAYER_L2_PRIVATE_KEY;
 const rpc = process.env.L2_RPC_URL ?? process.env.RPC_URL_PRIVIDIUM;
 if (!pk || !rpc) throw new Error('RELAYER_L2_PRIVATE_KEY and L2_RPC_URL required');
+const domain = process.env.SIWE_DOMAIN!;
+const permissionsApiBaseUrl = process.env.PRIVIDIUM_API_BASE_URL!;
 
-const jwt = process.env.PRIVIDIUM_JWT;
-const transport = http(rpc, { fetchOptions: jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : undefined });
+const transport = http(rpc, { fetchFn: authFetch });
 const publicClient = createPublicClient({ transport });
 const walletClient = createWalletClient({ transport, account: privateKeyToAccount(pk as `0x${string}`) });
 const db = new Database(process.env.SQLITE_PATH ?? resolve(process.cwd(), '../data/poc.db'));
@@ -93,3 +94,52 @@ async function tick() {
 
 setInterval(() => void tick(), Number(process.env.RELAYER_POLL_MS ?? 7000));
 void tick();
+
+
+async function authFetch(url: any, init = {}) {
+  const serviceToken = await getServiceToken();
+
+  const headers = {
+    ...((init as any).headers || {}),
+    Authorization: `Bearer ${serviceToken}`
+  };
+
+  let response = await fetch(url, { ...init, headers });
+
+  return response;
+}
+
+let cached = { token: null, expiresAt: 0 };
+
+
+export async function getServiceToken() {
+  if (cached.token && Date.now() < cached.expiresAt) {
+    return cached.token;
+  }
+
+  const account = privateKeyToAccount(pk as any);
+  console.log("requesting siwe from ", `${permissionsApiBaseUrl}/api/siwe-messages`);
+  const msgRes = await fetch(`${permissionsApiBaseUrl}/api/siwe-messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: account.address, domain })
+  });
+  if (!msgRes.ok) {
+    console.log("Error: ", await msgRes.text());
+    throw new Error('Failed to request SIWE message for service auth');
+  }
+  const { msg } = await msgRes.json();
+
+  const signature = await account.signMessage({ message: msg });
+
+  const loginRes = await fetch(`${permissionsApiBaseUrl}/api/auth/login/crypto-native`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: msg, signature })
+  });
+  if (!loginRes.ok) throw new Error('Failed to login service account');
+  const { token } = await loginRes.json();
+
+  cached = { token, expiresAt: Date.now() + 5 * 60 * 1000 };
+  return token;
+}

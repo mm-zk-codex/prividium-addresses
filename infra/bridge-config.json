@@ -4,12 +4,12 @@
     "bridgehub": "0xAAb95DfC116D9D9D9dD931Cda1Fd4142dB135365",
     "assetRouter": "0xe6438F51c0cb23fA454985C6AdFd6b5A634Cd79B",
     "nativeTokenVault": "0x8e33D84723d161b79A2324FFF96393Ac63A85893",
-    "forwarderFactory": "0x36d75057143ED635218A1081cAeAe2E40902B79E"
+    "forwarderFactory": "0x86927eCc51BD9df320edEB5347C3d1aA6Fd5a5A8"
   },
   "l2": {
     "chainId": 6565,
-    "vaultFactory": "0x148C150e0ad545CC7cb871E592bF359df710d9ce",
-    "rpcUrl": "http://localhost:5050"
+    "vaultFactory": "0x8D54755A470F85da43b755668d7013c6Dd608Ea7",
+    "rpcUrl": "http://localhost:8000/rpc"
   },
   "tokens": [
     {

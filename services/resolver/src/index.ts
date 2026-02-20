@@ -9,6 +9,8 @@ import { loadBridgeConfig } from '@prividium-poc/config';
 import { createPublicClient, getAddress, http } from 'viem';
 import { openDb } from './db.js';
 import { evaluateAliasExists } from './alias.js';
+import { privateKeyToAccount } from 'viem/accounts';
+
 
 dotenv.config({ path: resolve(process.cwd(), '../../infra/.env') });
 
@@ -21,8 +23,8 @@ const prividiumApiBaseUrl = process.env.PRIVIDIUM_API_BASE_URL ?? '';
 const db = openDb(sqlitePath);
 const bridgeConfig = loadBridgeConfig();
 
-const l1Client = createPublicClient({ chain: undefined, transport: http(process.env.L1_RPC_URL ?? process.env.RPC_URL_SEPOLIA) });
-const l2Client = createPublicClient({ chain: undefined, transport: http(process.env.L2_RPC_URL ?? process.env.RPC_URL_PRIVIDIUM) });
+const l1Client = createPublicClient({ chain: undefined, transport: http(process.env.L1_RPC_URL) });
+const l2Client = createPublicClient({ chain: undefined, transport: http(process.env.L2_RPC_URL, { fetchFn: authFetch }) });
 
 const forwarderFactoryAbi = [{ type: 'function', name: 'computeAddress', stateMutability: 'view', inputs: [{ type: 'bytes32' }, { type: 'address' }, { type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'address' }, { type: 'address' }], outputs: [{ type: 'address' }] }] as const;
 const vaultFactoryAbi = [{ type: 'function', name: 'computeVaultAddress', stateMutability: 'view', inputs: [{ type: 'bytes32' }, { type: 'address' }], outputs: [{ type: 'address' }] }] as const;
@@ -163,3 +165,56 @@ app.get('/alias/deposits', (req, res) => {
 });
 
 app.listen(Number(process.env.RESOLVER_PORT ?? 4000), () => console.log('resolver listening'));
+
+
+
+async function authFetch(url: any, init = {}) {
+  const serviceToken = await getServiceToken();
+
+  const headers = {
+    ...((init as any).headers || {}),
+    Authorization: `Bearer ${serviceToken}`
+  };
+
+  let response = await fetch(url, { ...init, headers });
+
+  return response;
+}
+
+let cached = { token: null, expiresAt: 0 };
+const domain = process.env.SIWE_DOMAIN;
+const pk = process.env.RELAYER_L2_PRIVATE_KEY;
+
+
+
+export async function getServiceToken() {
+  if (cached.token && Date.now() < cached.expiresAt) {
+    return cached.token;
+  }
+
+  const account = privateKeyToAccount(pk as any);
+  console.log("requesting siwe from ", `${prividiumApiBaseUrl}/api/siwe-messages`);
+  const msgRes = await fetch(`${prividiumApiBaseUrl}/api/siwe-messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: account.address, domain })
+  });
+  if (!msgRes.ok) {
+    console.log("Error: ", await msgRes.text());
+    throw new Error('Failed to request SIWE message for service auth');
+  }
+  const { msg } = await msgRes.json();
+
+  const signature = await account.signMessage({ message: msg });
+
+  const loginRes = await fetch(`${prividiumApiBaseUrl}/api/auth/login/crypto-native`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: msg, signature })
+  });
+  if (!loginRes.ok) throw new Error('Failed to login service account');
+  const { token } = await loginRes.json();
+
+  cached = { token, expiresAt: Date.now() + 5 * 60 * 1000 };
+  return token;
+}

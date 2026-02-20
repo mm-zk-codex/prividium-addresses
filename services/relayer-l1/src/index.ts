@@ -8,8 +8,8 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { computeNextAttemptAt, loadSupportedTokens, toTokenAllowlist, tryAcquireInflight } from './lib.js';
 
 dotenv.config({ path: resolve(process.cwd(), '../../infra/.env') });
-const pk = process.env.RELAYER_L1_PRIVATE_KEY ?? process.env.PRIVATE_KEY_RELAYER;
-const rpc = process.env.L1_RPC_URL ?? process.env.RPC_URL_SEPOLIA;
+const pk = process.env.RELAYER_L1_PRIVATE_KEY;
+const rpc = process.env.L1_RPC_URL;
 if (!pk || !rpc) throw new Error('RELAYER_L1_PRIVATE_KEY and L1_RPC_URL required');
 
 const bridgeConfig = loadBridgeConfig();

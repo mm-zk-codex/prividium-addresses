@@ -22,7 +22,7 @@ docker compose build
 3. Generate/update bridge config in the persistent config volume.
 
 ```bash
-docker compose --profile init run --rm fetch-bridge-config
+docker compose --profile init run --build --rm fetch-bridge-config
 ```
 
 4. Start the stack.
