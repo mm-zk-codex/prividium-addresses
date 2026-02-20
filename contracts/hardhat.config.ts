@@ -16,8 +16,8 @@ const config: HardhatUserConfig = {
   },
   networks: {
     sepolia: {
-      url: process.env.RPC_URL_SEPOLIA ?? '',
-      accounts: process.env.PRIVATE_KEY_RELAYER ? [process.env.PRIVATE_KEY_RELAYER] : []
+      url: process.env.L1_RPC_URL ?? '',
+      accounts: process.env.RELAYER_L1_PRIVATE_KEY ? [process.env.RELAYER_L1_PRIVATE_KEY] : []
     }
   }
 };

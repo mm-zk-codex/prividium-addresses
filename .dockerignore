@@ -8,3 +8,5 @@ coverage
 **/dist
 contracts/artifacts
 contracts/cache
+infra/.env
+web/.env

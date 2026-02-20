@@ -13,8 +13,6 @@ services:
       PRIVIDIUM_API_BASE_URL: ${PRIVIDIUM_API_BASE_URL:-}
       PRIVIDIUM_AUTH_BASE_URL: ${PRIVIDIUM_AUTH_BASE_URL:-}
       PRIVIDIUM_CLIENT_ID: ${PRIVIDIUM_CLIENT_ID:-}
-      PRIVIDIUM_CLIENT_SECRET: ${PRIVIDIUM_CLIENT_SECRET:-}
-      PRIVIDIUM_SERVICE_TOKEN: ${PRIVIDIUM_SERVICE_TOKEN:-}
     volumes:
       - prividium_db:/data
       - prividium_config:/config
@@ -80,11 +78,15 @@ services:
       target: web
       args:
         VITE_RESOLVER_URL: /api
+        VITE_PRIVIDIUM_CLIENT_ID: ${PRIVIDIUM_CLIENT_ID}
+        VITE_PRIVIDIUM_RPC_URL: ${VITE_PRIVIDIUM_RPC_URL}
+        VITE_PRIVIDIUM_AUTH_BASE_URL: ${VITE_PRIVIDIUM_AUTH_BASE_URL}
+        VITE_PRIVIDIUM_API_BASE_URL: ${VITE_PRIVIDIUM_API_BASE_URL}
     depends_on:
       resolver:
         condition: service_healthy
     ports:
-      - "80:8080"
+      - "5173:8080"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
       interval: 10s
@@ -95,12 +97,18 @@ services:
   fetch-bridge-config:
     build:
       context: .
-      target: tools
+      target: build-tools
     profiles: ["init"]
     environment:
       NODE_ENV: production
       BRIDGE_CONFIG_JSON_PATH: /config/bridge-config.json
       SUPPORTED_ERC20_JSON_PATH: /config/supported-erc20.json
+      CONTRACTS_JSON_PATH: /config/contracts.json
+      BRIDGEHUB_ADDRESS: ${BRIDGEHUB_ADDRESS}
+      RELAYER_L1_PRIVATE_KEY: ${RELAYER_L1_PRIVATE_KEY}
+      L2_DEPLOYER_PRIVATE_KEY: ${L2_DEPLOYER_PRIVATE_KEY}
+      L1_CHAIN_ID: ${L1_CHAIN_ID}
+      L2_CHAIN_ID: ${L2_CHAIN_ID}
       L1_RPC_URL: ${L1_RPC_URL}
       L2_RPC_URL: ${L2_RPC_URL}
       AUTO_REGISTER_TOKENS: ${AUTO_REGISTER_TOKENS:-0}
@@ -108,7 +116,7 @@ services:
     volumes:
       - prividium_config:/config
       - ./infra/supported-erc20.json:/config/supported-erc20.json:ro
-    command: ["pnpm", "--filter", "tools", "run", "fetch-bridge-config"]
+    command: ["sh", "contracts/setup.sh"]
 
 volumes:
   prividium_db:

@@ -55,9 +55,14 @@ async function main() {
     deployedAt: new Date().toISOString()
   };
 
-  const outDir = resolve(process.cwd(), 'deployments');
-  mkdirSync(outDir, { recursive: true });
-  writeFileSync(resolve(outDir, `${payload.l1.chainId}.json`), JSON.stringify(payload, null, 2));
+  if (process.env.CONTRACTS_JSON_PATH) {
+    writeFileSync(process.env.CONTRACTS_JSON_PATH, JSON.stringify(payload, null, 2));
+    console.log(`Deployment info written to ${process.env.CONTRACTS_JSON_PATH}`);
+  } else {
+    const outDir = resolve(process.cwd(), 'deployments');
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(resolve(outDir, `${payload.l1.chainId}.json`), JSON.stringify(payload, null, 2));
+  }
   console.log(payload);
 }
 
