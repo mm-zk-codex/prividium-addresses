@@ -1,8 +1,7 @@
 import { concatHex, encodeAbiParameters, getAddress, keccak256, parseAbi, toHex } from 'viem';
 
 export const depositStatus = [
-  'issued',
-  'l1_detected',
+  'detected_l1',
   'l1_forwarder_deployed',
   'l1_bridging_submitted',
   'l2_arrived',
@@ -13,20 +12,18 @@ export const depositStatus = [
 ] as const;
 export type DepositStatus = (typeof depositStatus)[number];
 
-export type TokenType = 'ETH' | 'ERC20';
-
 export interface DepositRequestRow {
   trackingId: string;
   aliasKey: string;
-  chainId: number;
   l1DepositAddressY: string;
   l2VaultAddressX: string;
   saltY: string;
   saltX: string;
-  tokenType: TokenType;
-  l1TokenAddress: string | null;
-  amount: string | null;
-  status: DepositStatus;
+  createdAt: number;
+  lastActivityAt: number;
+  inflightL1: number;
+  inflightL2: number;
+  isActive: number;
 }
 
 export const FORWARDER_FACTORY_L1_ABI = parseAbi([
