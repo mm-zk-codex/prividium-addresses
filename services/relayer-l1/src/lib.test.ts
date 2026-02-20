@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
-import { isTokenSupported, toTokenAllowlist, tryAcquireInflight } from './lib.js';
+import { computeNextAttemptAt, isTokenSupported, toTokenAllowlist, tryAcquireInflight } from './lib.js';
 
 test('token allowlist enforcement', () => {
   const allowlist = toTokenAllowlist([{ l1Address: '0x0000000000000000000000000000000000000001', symbol: 'T', decimals: 18, name: 'T' }]);
@@ -21,4 +21,11 @@ test('multi-event creation for same trackingId', () => {
 test('inflight locking', () => {
   assert.equal(tryAcquireInflight(0), true);
   assert.equal(tryAcquireInflight(1), false);
+});
+
+test('retry backoff increases', () => {
+  const now = 1000;
+  const one = computeNextAttemptAt(now, 1, 10, 1000);
+  const two = computeNextAttemptAt(now, 2, 10, 1000);
+  assert.ok(two > one);
 });

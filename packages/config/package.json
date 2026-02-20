@@ -1,0 +1,19 @@
+{
+  "name": "@prividium-poc/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "viem": "^2.21.53"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "tsx": "^4.19.2"
+  }
+}

@@ -60,6 +60,17 @@ function App() {
     setRows(await resp.json());
   };
 
+  const retryEvent = async (eventId: number) => {
+    const headers = { 'content-type': 'application/json', ...(prividium.getAuthHeaders() ?? {}) } as Record<string, string>;
+    await fetch(`${resolver}/deposit-events/${eventId}/retry`, { method: 'POST', headers, body: JSON.stringify({ suffix }) });
+    await loadDeposits();
+  };
+
+  const retryAllStuck = async () => {
+    const stuck = rows.flatMap((r) => (r.events ?? []).filter((e: any) => e.stuck));
+    for (const event of stuck) await retryEvent(event.id);
+  };
+
   return (
     <div className="card">
       <h1 className="text-xl font-bold">Prividium Recipient Portal</h1>
@@ -70,6 +81,7 @@ function App() {
       <div className="flex gap-2">
         <button onClick={registerAlias}>Register alias</button>
         <button onClick={loadDeposits}>Refresh deposit flow status</button>
+        <button onClick={retryAllStuck}>Retry all stuck</button>
       </div>
       <ul className="text-xs space-y-1">
         {rows.map((r) => (
@@ -78,7 +90,11 @@ function App() {
             <div className="break-all">Y: {r.l1DepositAddressY}</div>
             <div className="break-all">X: {r.l2VaultAddressX}</div>
             {(r.events ?? []).map((e: any) => (
-              <div key={e.id}>{e.kind} {e.amount} - {e.status}</div>
+              <div key={e.id} className={e.stuck ? 'bg-red-900/40 p-1 rounded mt-1' : 'mt-1'}>
+                <div>{e.kind} {e.amount} - {e.status}</div>
+                {e.stuck ? <div>stuck after {e.attempts} attempts; error: {e.error}</div> : null}
+                {e.stuck ? <button onClick={() => retryEvent(e.id)}>Retry</button> : null}
+              </div>
             ))}
           </li>
         ))}

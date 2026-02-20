@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@prividium-poc/types": "workspace:*",
@@ -15,7 +16,8 @@
     "express": "^4.21.2",
     "uuid": "^11.0.3",
     "viem": "^2.21.53",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@prividium-poc/config": "workspace:*"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

@@ -55,6 +55,10 @@ export function openDb(path: string) {
       l2SweepTxHash TEXT,
       error TEXT,
       note TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      nextAttemptAt INTEGER NOT NULL DEFAULT 0,
+      stuck INTEGER NOT NULL DEFAULT 0,
+      lastErrorAt INTEGER,
       createdAt INTEGER NOT NULL
     );
 
@@ -90,6 +94,11 @@ export function openDb(path: string) {
       (SELECT a.recipientPrividiumAddress FROM aliases a WHERE a.aliasKey = deposit_requests.aliasKey)
     )
   `);
+
+  ensureColumn(db, 'deposit_events', 'attempts INTEGER DEFAULT 0', 'attempts');
+  ensureColumn(db, 'deposit_events', 'nextAttemptAt INTEGER DEFAULT 0', 'nextAttemptAt');
+  ensureColumn(db, 'deposit_events', 'stuck INTEGER DEFAULT 0', 'stuck');
+  ensureColumn(db, 'deposit_events', 'lastErrorAt INTEGER', 'lastErrorAt');
 
   return db;
 }
