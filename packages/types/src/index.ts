@@ -1,8 +1,7 @@
 import { concatHex, encodeAbiParameters, getAddress, keccak256, parseAbi, toHex } from 'viem';
 
 export const depositStatus = [
-  'issued',
-  'l1_detected',
+  'detected_l1',
   'l1_forwarder_deployed',
   'l1_bridging_submitted',
   'l2_arrived',
@@ -13,20 +12,19 @@ export const depositStatus = [
 ] as const;
 export type DepositStatus = (typeof depositStatus)[number];
 
-export type TokenType = 'ETH' | 'ERC20';
-
 export interface DepositRequestRow {
   trackingId: string;
   aliasKey: string;
-  chainId: number;
+  recipientPrividiumAddress?: string;
   l1DepositAddressY: string;
   l2VaultAddressX: string;
   saltY: string;
   saltX: string;
-  tokenType: TokenType;
-  l1TokenAddress: string | null;
-  amount: string | null;
-  status: DepositStatus;
+  createdAt: number;
+  lastActivityAt: number;
+  inflightL1: number;
+  inflightL2: number;
+  isActive: number;
 }
 
 export const FORWARDER_FACTORY_L1_ABI = parseAbi([
@@ -41,7 +39,7 @@ export const VAULT_FACTORY_ABI = parseAbi([
 
 export const STEALTH_FORWARDER_L1_ABI = parseAbi([
   'function sweepETH() payable',
-  'function sweepERC20(address l1Token,uint256 amount,bytes32 tokenAssetId,uint256 mintValue,uint256 l2GasLimit,uint256 l2GasPerPubdataByteLimit) payable'
+  'function sweepERC20(address l1Token) payable'
 ]);
 
 export const ONE_WAY_VAULT_ABI = parseAbi(['function sweepETH()', 'function sweepERC20(address token)']);

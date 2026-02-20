@@ -36,6 +36,10 @@ interface IBridgehub {
     ) external payable returns (bytes32);
 }
 
+interface NativeTokenVault {
+    function assetId(address l1Token) external view returns (bytes32);
+}
+
 contract StealthForwarderL1 {
     address public immutable bridgehub;
     uint256 public immutable l2ChainId;
@@ -102,40 +106,33 @@ contract StealthForwarderL1 {
         emit SweptETH(xDestination, bal - msg.value, txHash);
     }
 
-    function sweepERC20(
-        address l1Token,
-        uint256 amount,
-        bytes32 tokenAssetId,
-        uint256 mintValue,
-        uint256 l2GasLimit,
-        uint256 l2GasPerPubdataByteLimit
-    ) external payable {
-        require(msg.value == mintValue, "msg.value mismatch");
+    function sweepERC20(address l1Token) external payable {
+        // Amount should be the full token balance.
+        uint256 amount = IERC20(l1Token).balanceOf(address(this));
+        require(amount > 0, "empty");
+
+        bytes32 tokenAssetId = NativeTokenVault(nativeTokenVault).assetId(
+            l1Token
+        );
+        // Make sure it is not zero
+        require(tokenAssetId != bytes32(0), "Token not registered");
+
         require(
             IERC20(l1Token).approve(nativeTokenVault, amount),
             "approve failed"
         );
 
-        bytes memory depositData = abi.encodeWithSignature(
-            "f(uint256,address,address)",
-            amount,
-            xDestination,
-            address(0)
-        );
-        bytes memory encoded = abi.encodeWithSignature(
-            "f(bytes32,bytes)",
-            tokenAssetId,
-            depositData
-        );
+        bytes memory depositData = abi.encode(amount, xDestination, address(0));
+        bytes memory encoded = abi.encode(tokenAssetId, depositData);
         bytes memory bridgeCalldata = bytes.concat(hex"01", encoded);
 
         IBridgehub.L2TransactionRequestTwoBridgesOuter memory req = IBridgehub
             .L2TransactionRequestTwoBridgesOuter({
                 chainId: l2ChainId,
-                mintValue: mintValue,
+                mintValue: msg.value,
                 l2Value: 0,
-                l2GasLimit: l2GasLimit,
-                l2GasPerPubdataByteLimit: l2GasPerPubdataByteLimit,
+                l2GasLimit: 2_000_000, // TODO: first deployment vs repeated.
+                l2GasPerPubdataByteLimit: 800,
                 refundRecipient: refundRecipient,
                 secondBridgeAddress: assetRouter,
                 secondBridgeValue: 0,
