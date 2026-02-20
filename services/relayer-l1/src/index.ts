@@ -71,10 +71,27 @@ async function processDeposit(row: any) {
   let eventId = 0;
   try {
     const y = getAddress(row.l1DepositAddressY);
+
+    const ethBal = await publicClient.getBalance({ address: y });
+    let erc20Candidate: { tokenAddr: `0x${string}`; bal: bigint } | null = null;
+    if (ethBal === 0n) {
+      for (const token of supportedTokens) {
+        const tokenAddr = getAddress(token.l1Address);
+        if (!tokenAllowlist.has(tokenAddr.toLowerCase())) continue;
+        const bal = (await publicClient.readContract({ address: tokenAddr, abi: erc20Abi, functionName: 'balanceOf', args: [y] })) as bigint;
+        if (bal === 0n) continue;
+        erc20Candidate = { tokenAddr, bal };
+        break;
+      }
+    }
+
+    if (ethBal === 0n && !erc20Candidate) return;
+
     const code = await publicClient.getCode({ address: y });
+    let deployTx: `0x${string}` | null = null;
     if (!code || code === '0x') {
       const refundRecipient = process.env.REFUND_RECIPIENT_L2 ?? row.recipientPrividiumAddress;
-      const deployTx = await walletClient.writeContract({
+      deployTx = await walletClient.writeContract({
         address: bridgeConfig.l1.forwarderFactory,
         abi: FORWARDER_FACTORY_L1_ABI,
         functionName: 'deploy',
@@ -82,13 +99,11 @@ async function processDeposit(row: any) {
       });
       await publicClient.waitForTransactionReceipt({ hash: deployTx });
       db.prepare('UPDATE deposit_requests SET lastActivityAt=? WHERE trackingId=?').run(Date.now(), row.trackingId);
-      eventId = createEvent(row.trackingId, 'ETH', 0n);
-      updateEvent(eventId, 'l1_forwarder_deployed', { l1DeployTxHash: deployTx });
     }
 
-    const ethBal = await publicClient.getBalance({ address: y });
     if (ethBal > 0n) {
       eventId = createEvent(row.trackingId, 'ETH', ethBal);
+      if (deployTx) updateEvent(eventId, 'l1_forwarder_deployed', { l1DeployTxHash: deployTx });
       const sweepTx = await withMintRetry((mint) => walletClient.writeContract({ address: y, abi: STEALTH_FORWARDER_L1_ABI, functionName: 'sweepETH', args: [], value: mint }), defaultMintEth);
       await publicClient.waitForTransactionReceipt({ hash: sweepTx });
       updateEvent(eventId, 'l1_bridging_submitted', { l1BridgeTxHash: sweepTx });
@@ -96,19 +111,16 @@ async function processDeposit(row: any) {
       return;
     }
 
-    for (const token of supportedTokens) {
-      const tokenAddr = getAddress(token.l1Address);
-      if (!tokenAllowlist.has(tokenAddr.toLowerCase())) continue;
-      const bal = (await publicClient.readContract({ address: tokenAddr, abi: erc20Abi, functionName: 'balanceOf', args: [y] })) as bigint;
-      if (bal === 0n) continue;
-      eventId = createEvent(row.trackingId, 'ERC20', bal, tokenAddr);
+    if (erc20Candidate) {
+      eventId = createEvent(row.trackingId, 'ERC20', erc20Candidate.bal, erc20Candidate.tokenAddr);
+      if (deployTx) updateEvent(eventId, 'l1_forwarder_deployed', { l1DeployTxHash: deployTx });
       const sweepTx = await withMintRetry(
         (mint) =>
           walletClient.writeContract({
             address: y,
             abi: STEALTH_FORWARDER_L1_ABI,
             functionName: 'sweepERC20',
-            args: [tokenAddr],
+            args: [erc20Candidate.tokenAddr],
             value: mint
           }),
         defaultMintErc20

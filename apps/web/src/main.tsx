@@ -8,8 +8,50 @@ import './index.css';
 
 type AliasResult = 'match' | 'maybe_needs_suffix' | 'not_found';
 type Route = '/send' | '/portal';
+type StepperStep = 'deposit' | 'bridge' | 'finalize' | 'complete';
 
 const TRACKING_COOKIE = 'last_tracking_id';
+
+const STATUS_LABELS: Record<string, string> = {
+  detected_l1: 'Deposit received',
+  l1_forwarder_deployed: 'Preparing bridge',
+  l1_bridging_submitted: 'Bridging to Prividium',
+  l2_arrived: 'Finalizing',
+  l2_vault_deployed: 'Finalizing',
+  credited: 'Completed',
+  pending: 'Pending',
+  stuck: 'Needs attention',
+  l1_failed: 'Needs attention',
+  l2_failed: 'Needs attention',
+  error: 'Needs attention',
+  failed: 'Needs attention'
+};
+
+const STATUS_STEP: Record<string, StepperStep> = {
+  detected_l1: 'deposit',
+  l1_forwarder_deployed: 'bridge',
+  l1_bridging_submitted: 'bridge',
+  l2_arrived: 'finalize',
+  l2_vault_deployed: 'finalize',
+  credited: 'complete'
+};
+
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  detected_l1: 'bg-amber-500/20 text-amber-200 border border-amber-400/30',
+  l1_forwarder_deployed: 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/30',
+  l1_bridging_submitted: 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/30',
+  l2_arrived: 'bg-blue-500/20 text-blue-200 border border-blue-400/30',
+  l2_vault_deployed: 'bg-blue-500/20 text-blue-200 border border-blue-400/30',
+  credited: 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30',
+  stuck: 'bg-red-500/20 text-red-200 border border-red-400/30',
+  l1_failed: 'bg-red-500/20 text-red-200 border border-red-400/30',
+  l2_failed: 'bg-red-500/20 text-red-200 border border-red-400/30'
+};
+
+const statusBadgeClass = (status: string, stuck?: boolean) => {
+  if (stuck) return STATUS_BADGE_CLASS.stuck;
+  return STATUS_BADGE_CLASS[status.toLowerCase()] ?? 'bg-slate-500/20 text-slate-200 border border-slate-400/30';
+};
 
 function setCookie(name: string, value: string, days = 30) {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${days * 86400}`;
@@ -25,6 +67,20 @@ function clearCookie(name: string) {
 }
 
 const shortAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+const normalizeStatus = (status?: string) => STATUS_LABELS[(status ?? '').toLowerCase()] ?? 'In progress';
+const hasValue = (amount: unknown) => {
+  try {
+    return BigInt(String(amount ?? '0')) > 0n;
+  } catch {
+    return false;
+  }
+};
+
+const statusStep = (status?: string, stuck?: boolean): StepperStep => {
+  if (stuck) return 'bridge';
+  const normalized = (status ?? '').toLowerCase();
+  return STATUS_STEP[normalized] ?? 'deposit';
+};
 
 function getInitialRoute(): Route {
   return window.location.pathname.startsWith('/portal') ? '/portal' : '/send';
@@ -65,6 +121,36 @@ function App() {
   );
 }
 
+function FlowStepper({ events }: { events: any[] }) {
+  const steps = [
+    { key: 'deposit', label: 'Deposit received', icon: '📥' },
+    { key: 'bridge', label: 'Bridging to Prividium', icon: '🌉' },
+    { key: 'finalize', label: 'Finalizing', icon: '🧾' },
+    { key: 'complete', label: 'Completed', icon: '✅' }
+  ] as const;
+
+  const activeIndex = Math.max(0, ...events.map((e) => steps.findIndex((s) => s.key === statusStep(e.status, e.stuck))));
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-slate-200">Transfer progress</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {steps.map((step, idx) => {
+          const completed = idx < activeIndex || (idx === activeIndex && activeIndex === steps.length - 1);
+          const current = idx === activeIndex;
+          return (
+            <div key={step.key} className={`rounded-xl border p-3 ${completed ? 'border-emerald-400/40 bg-emerald-500/10' : current ? 'border-indigo-400/50 bg-indigo-500/10' : 'border-slate-700 bg-slate-900/40'}`}>
+              <div className="text-lg" aria-hidden>{step.icon}</div>
+              <div className="text-sm font-medium mt-1">{step.label}</div>
+              <div className="text-xs text-slate-300 mt-1">{completed ? 'Done' : current ? 'In progress' : 'Pending'}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SendPage({ resolver }: { resolver: string }) {
   const [email, setEmail] = useState('');
   const [suffix, setSuffix] = useState('');
@@ -75,9 +161,12 @@ function SendPage({ resolver }: { resolver: string }) {
   const [support, setSupport] = useState<any>(null);
   const [supportAvailable, setSupportAvailable] = useState<boolean | null>(null);
   const [acceptedTokens, setAcceptedTokens] = useState<any[]>([]);
+  const [lastPayload, setLastPayload] = useState<{ email: string; suffix?: string } | null>(null);
 
   const trackingId = req?.trackingId;
   const trackingLink = useMemo(() => (trackingId ? `${window.location.origin}/send?trackingId=${trackingId}` : ''), [trackingId]);
+  const events = status?.events ?? [];
+  const transferEvents = events.filter((e: any) => hasValue(e.amount));
 
   const loadTracking = async (id: string) => {
     const r = await fetch(`${resolver}/deposit/${id}`);
@@ -112,6 +201,7 @@ function SendPage({ resolver }: { resolver: string }) {
       setMessage(data.error ?? 'Unable to generate');
       return;
     }
+    setLastPayload(payload);
     setReq(data);
     setStatus(null);
     setSupport(null);
@@ -138,12 +228,17 @@ function SendPage({ resolver }: { resolver: string }) {
     setMessage('Recipient may need to register in Prividium before receiving deposits.');
   };
 
-  const generateNewAddress = () => {
+  const generateNewAddress = async () => {
     clearCookie(TRACKING_COOKIE);
+    if (lastPayload) {
+      await requestDeposit(lastPayload);
+      return;
+    }
     setReq(null);
     setStatus(null);
     setSupport(null);
     setSupportAvailable(null);
+    setMessage('Enter recipient details and continue to generate a new address.');
   };
 
   useEffect(() => {
@@ -172,46 +267,95 @@ function SendPage({ resolver }: { resolver: string }) {
     void loadSupport(trackingId);
   }, [trackingId]);
 
+  const hasStuckEvent = transferEvents.some((e: any) => e.stuck);
+
   return (
-    <div className="card">
-      <h1 className="text-xl font-bold">Prividium Send</h1>
-      <p className="text-sm text-emerald-300">Transfer ETH or any supported ERC20 to one deposit address.</p>
-      <div className="text-xs text-slate-300">Accepted tokens: ETH and the ERC20 list below.</div>
-      <ul className="text-xs space-y-1">
-        {acceptedTokens.map((t) => (
-          <li key={t.l1Address}><b>{t.symbol}</b> {t.name} ({shortAddress(t.l1Address)}) / {t.decimals} decimals</li>
-        ))}
-      </ul>
-      <input placeholder="recipient email" value={email} onChange={(e) => setEmail(e.target.value)} />
-      {showSuffix && <input placeholder="suffix" value={suffix} onChange={(e) => setSuffix(e.target.value)} />}
-      <button onClick={() => void continueFlow()}>Continue</button>
-      {message && <div className="text-xs text-amber-300">{message}</div>}
+    <div className="card space-y-6">
+      <div className="space-y-2">
+        <h1 className="text-2xl font-bold">Prividium Send</h1>
+        <p className="text-sm text-slate-300">Send ETH or supported ERC20 tokens to one deposit address. We handle the rest.</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+        <input placeholder="recipient email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <button className="btn-primary" onClick={() => void continueFlow()}>Continue</button>
+        {showSuffix && <input className="sm:col-span-2" placeholder="suffix" value={suffix} onChange={(e) => setSuffix(e.target.value)} />}
+      </div>
+      {message && <div className="text-sm text-amber-300">{message}</div>}
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-200">Supported tokens</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {acceptedTokens.map((t) => (
+            <div key={t.l1Address} className="border border-slate-700 rounded-xl p-3 bg-slate-900/30">
+              <div className="font-semibold">{t.symbol}</div>
+              <div className="text-sm text-slate-300">{t.name}</div>
+              <div className="text-xs text-slate-400 font-mono break-all mt-1">{t.l1Address}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {req && (
-        <div className="space-y-2 text-sm">
-          <div>trackingId: {req.trackingId}</div>
-          <div className="break-all">L1 deposit Y: {req.l1DepositAddress}</div>
-          <button onClick={() => navigator.clipboard.writeText(req.l1DepositAddress)}>Copy deposit address</button>
-          <button onClick={() => navigator.clipboard.writeText(trackingLink)}>Copy tracking link</button>
-          <button onClick={generateNewAddress}>Generate new address</button>
-          <img className="bg-white inline-block p-2 rounded" width={160} height={160} alt="Deposit address QR" src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(`ethereum:${req.l1DepositAddress}`)}`} />
-          <div className="text-xs text-slate-300">Scan to pay</div>
-          <ul className="space-y-1 text-xs">
-            {(status?.events ?? []).map((e: any) => (
-              <li key={e.id} className="border border-slate-700 rounded p-2">
-                <div>{e.kind} {e.l1TokenAddress ? `(${e.l1TokenAddress})` : ''}</div>
-                <div>amount: {e.amount}</div>
-                <div>status: {e.status}</div>
-              </li>
-            ))}
-          </ul>
-          <div className="border border-slate-700 rounded p-3 space-y-1 text-xs">
-            <h3 className="font-semibold text-sm">Support / troubleshooting</h3>
-            {support ? (
-              <pre className="whitespace-pre-wrap">{JSON.stringify(support, null, 2)}</pre>
-            ) : supportAvailable === false ? (
-              <div className="text-slate-300">Support endpoint is not enabled on this deployment.</div>
+        <div className="space-y-5">
+          <div className="border border-indigo-400/30 rounded-2xl p-4 md:p-5 bg-indigo-500/10">
+            <h2 className="font-semibold text-lg">Deposit address</h2>
+            <div className="break-all text-sm mt-2">{req.l1DepositAddress}</div>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <button className="btn-primary" onClick={() => navigator.clipboard.writeText(req.l1DepositAddress)}>Copy address</button>
+              <button className="btn-secondary" onClick={() => navigator.clipboard.writeText(trackingLink)}>Copy tracking link</button>
+              <button className="btn-secondary" onClick={() => void generateNewAddress()}>Generate new address</button>
+            </div>
+            <div className="mt-4 flex items-center gap-4 flex-wrap">
+              <img className="bg-white inline-block p-2 rounded" width={160} height={160} alt="Deposit address QR" src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(`ethereum:${req.l1DepositAddress}`)}`} />
+              <div className="text-xs text-slate-300">Scan QR to pay from your wallet.</div>
+            </div>
+            <div className="text-xs text-slate-400 mt-3">Details: tracking ID {req.trackingId}</div>
+          </div>
+
+          {transferEvents.length > 0 ? <FlowStepper events={transferEvents} /> : null}
+
+          <details className="border border-slate-700 rounded-xl p-3 bg-slate-900/30">
+            <summary className="cursor-pointer text-sm font-semibold">Deposit history</summary>
+            <div className="mt-3 space-y-2">
+              {events.length === 0 ? <div className="text-xs text-slate-400">No events yet.</div> : null}
+              {events.map((e: any) => (
+                <div key={e.id} className={`rounded-lg border p-3 ${e.stuck ? 'border-red-400/40 bg-red-500/10' : 'border-slate-700 bg-slate-900/40'}`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-sm font-medium">{e.kind} • {e.amount}</div>
+                    <span className={`text-xs px-2 py-1 rounded-full ${statusBadgeClass(e.status, e.stuck)}`}>{normalizeStatus(e.status)}</span>
+                  </div>
+                  <div className="text-xs text-slate-400 mt-1">Asset: {e.l1TokenAddress ? shortAddress(e.l1TokenAddress) : 'ETH'}</div>
+                </div>
+              ))}
+            </div>
+          </details>
+
+          <div className="border border-slate-700 rounded-xl p-3 space-y-2 text-sm">
+            <h3 className="font-semibold">Support</h3>
+            {hasStuckEvent ? (
+              <div className="text-red-200 bg-red-500/10 border border-red-400/30 rounded p-2">A transfer looks stuck. You can use the support details below when contacting support.</div>
             ) : (
-              <div className="text-slate-300">Support details appear here when available.</div>
+              <div className="text-slate-300">Everything appears to be progressing normally.</div>
+            )}
+
+            {support ? (
+              <>
+                {hasStuckEvent && support?.code ? (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-slate-300">Support code: <b>{support.code}</b></span>
+                    <button className="btn-secondary" onClick={() => navigator.clipboard.writeText(String(support.code))}>Copy support code</button>
+                  </div>
+                ) : null}
+                <details className="text-xs">
+                  <summary className="cursor-pointer font-semibold">Technical details</summary>
+                  <pre className="whitespace-pre-wrap mt-2 bg-slate-950/60 p-2 rounded">{JSON.stringify(support, null, 2)}</pre>
+                </details>
+              </>
+            ) : supportAvailable === false ? (
+              <div className="text-slate-300 text-xs">Support endpoint is not enabled on this deployment.</div>
+            ) : (
+              <div className="text-slate-300 text-xs">Support details appear here when available.</div>
             )}
           </div>
         </div>
@@ -258,38 +402,96 @@ function PortalPage({ resolver }: { resolver: string }) {
 
   const retryAllStuck = async () => {
     const stuck = rows.flatMap((r) => (r.events ?? []).filter((e: any) => e.stuck));
-    for (const event of stuck) {
-      await retryEvent(event.id);
-    }
+    for (const event of stuck) await retryEvent(event.id);
   };
 
+  const grouped = rows.reduce((acc: Record<string, any>, row) => {
+    const key = row.l1DepositAddressY ?? 'unknown';
+    if (!acc[key]) acc[key] = { address: row.l1DepositAddressY, alias: row.alias ?? auth.displayName, rows: [] as any[] };
+    acc[key].rows.push(row);
+    return acc;
+  }, {});
+
   return (
-    <div className="card">
-      <h1 className="text-xl font-bold">Prividium Recipient Portal</h1>
+    <div className="card space-y-6">
+      <h1 className="text-2xl font-bold">Prividium Recipient Portal</h1>
       <div className="text-sm">Signed in as: {auth.displayName}</div>
-      <div className="break-all text-sm">Your wallet address: {auth.walletAddress}</div>
-      <input placeholder="optional suffix" value={suffix} onChange={(e) => setSuffix(e.target.value)} />
-      <div className="flex gap-2 flex-wrap">
-        <button onClick={() => void registerAlias()}>Register alias</button>
-        <button onClick={() => void loadDeposits()}>Refresh deposit flow status</button>
-        <button onClick={() => void retryAllStuck()}>Retry all stuck</button>
+      <div className="break-all text-sm text-slate-300">Wallet: {auth.walletAddress}</div>
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
+        <input placeholder="optional suffix" value={suffix} onChange={(e) => setSuffix(e.target.value)} />
+        <button className="btn-secondary" onClick={() => void registerAlias()}>Register alias</button>
+        <button className="btn-secondary" onClick={() => void loadDeposits()}>Refresh</button>
+        <button className="btn-primary" onClick={() => void retryAllStuck()}>Retry all stuck</button>
       </div>
-      <ul className="text-xs space-y-1">
-        {rows.map((r) => (
-          <li key={r.trackingId} className="border border-slate-700 rounded p-2">
-            <div>{r.trackingId}</div>
-            <div className="break-all">Y: {r.l1DepositAddressY}</div>
-            <div className="break-all">X: {r.l2VaultAddressX}</div>
-            {(r.events ?? []).map((e: any) => (
-              <div key={e.id} className={e.stuck ? 'bg-red-900/40 p-1 rounded mt-1' : 'mt-1'}>
-                <div>{e.kind} {e.amount} - {e.status}</div>
-                {e.stuck ? <div>stuck after {e.attempts} attempts; error: {e.error}</div> : null}
-                {e.stuck ? <button onClick={() => void retryEvent(e.id)}>Retry</button> : null}
+
+      <div className="space-y-4">
+        {Object.values(grouped).map((group: any) => {
+          const events = group.rows.flatMap((r: any) => r.events ?? []);
+          const totals = events.reduce((acc: Record<string, bigint>, e: any) => {
+            if (!hasValue(e.amount)) return acc;
+            const asset = e.l1TokenAddress ? shortAddress(e.l1TokenAddress) : 'ETH';
+            acc[asset] = (acc[asset] ?? 0n) + BigInt(String(e.amount));
+            return acc;
+          }, {});
+
+          return (
+            <div key={group.address} className="border border-slate-700 rounded-2xl p-4 space-y-3 bg-slate-900/30">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm text-slate-300">Alias</div>
+                  <div className="font-semibold">{group.alias}</div>
+                </div>
+                <div className="text-sm text-slate-300">Deposit address: <span className="font-mono">{shortAddress(group.address)}</span></div>
               </div>
-            ))}
-          </li>
-        ))}
-      </ul>
+
+              <div className="flex flex-wrap gap-2 text-xs">
+                {Object.entries(totals).map(([asset, amount]) => (
+                  <span key={asset} className="px-2 py-1 rounded-full bg-slate-800 border border-slate-700">{asset}: {String(amount)}</span>
+                ))}
+                {Object.keys(totals).length === 0 ? <span className="text-slate-400">No deposits yet.</span> : null}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs md:text-sm">
+                  <thead>
+                    <tr className="text-left border-b border-slate-700 text-slate-300">
+                      <th className="py-2 pr-2">Asset</th>
+                      <th className="py-2 pr-2">Amount</th>
+                      <th className="py-2 pr-2">Status</th>
+                      <th className="py-2 pr-2">Attempts</th>
+                      <th className="py-2 pr-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {events.map((e: any) => (
+                      <tr key={e.id} className={e.stuck ? 'bg-red-500/10' : ''}>
+                        <td className="py-2 pr-2">{e.l1TokenAddress ? shortAddress(e.l1TokenAddress) : 'ETH'}</td>
+                        <td className="py-2 pr-2">{e.amount}</td>
+                        <td className="py-2 pr-2"><span className={`text-xs px-2 py-1 rounded-full ${statusBadgeClass(e.status, e.stuck)}`}>{normalizeStatus(e.status)}</span></td>
+                        <td className="py-2 pr-2">{e.attempts ?? 0}</td>
+                        <td className="py-2 pr-2">{e.stuck ? <button className="btn-primary" onClick={() => void retryEvent(e.id)}>Retry</button> : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <details className="text-xs">
+                <summary className="cursor-pointer font-semibold text-slate-300">Technical details</summary>
+                <div className="mt-2 space-y-2">
+                  {group.rows.map((r: any) => (
+                    <div key={r.trackingId} className="bg-slate-950/50 border border-slate-700 rounded p-2">
+                      <div>Tracking: {r.trackingId}</div>
+                      <div className="break-all">Vault: {r.l2VaultAddressX}</div>
+                      {r.events?.some((e: any) => e.stuck) ? <div className="text-red-200">Includes stuck events.</div> : null}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
