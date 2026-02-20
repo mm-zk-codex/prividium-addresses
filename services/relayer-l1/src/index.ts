@@ -14,6 +14,7 @@ if (!pk || !rpc) throw new Error('RELAYER_L1_PRIVATE_KEY and L1_RPC_URL required
 
 const bridgeConfig = loadBridgeConfig();
 const db = new Database(process.env.SQLITE_PATH ?? resolve(process.cwd(), '../data/poc.db'));
+db.pragma('busy_timeout = 5000');
 const supportedTokens = loadSupportedTokens(process.env.BRIDGE_CONFIG_JSON_PATH ?? resolve(process.cwd(), '../../infra/bridge-config.json'));
 const tokenAllowlist = toTokenAllowlist(supportedTokens);
 const account = privateKeyToAccount(pk as `0x${string}`);

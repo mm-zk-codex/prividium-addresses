@@ -17,6 +17,7 @@ const transport = http(rpc, { fetchOptions: jwt ? { headers: { Authorization: `B
 const publicClient = createPublicClient({ transport });
 const walletClient = createWalletClient({ transport, account: privateKeyToAccount(pk as `0x${string}`) });
 const db = new Database(process.env.SQLITE_PATH ?? resolve(process.cwd(), '../data/poc.db'));
+db.pragma('busy_timeout = 5000');
 const bridgeConfig = loadBridgeConfig();
 const tokenMap = Object.fromEntries(bridgeConfig.tokens.map((t) => [t.l1Address.toLowerCase(), t.l2Address]));
 const maxAttempts = Number(process.env.MAX_ATTEMPTS ?? 5);

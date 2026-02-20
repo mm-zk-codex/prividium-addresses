@@ -58,3 +58,21 @@ Fetch/update it with:
 6. Start unified UI:
    - `pnpm --filter web dev`
 7. Open the app (default `/send`), then login and use `/portal` for recipient actions.
+
+## Production with Docker Compose
+
+A production Docker setup is available at the repo root:
+
+- `Dockerfile` (multi-stage targets: `resolver`, `relayer-l1`, `relayer-l2`, `web`, `tools`)
+- `docker-compose.yml` (production stack + one-off init profile)
+- `.env.example` (copy to `.env` and fill secrets)
+- `scripts/README_DOCKER.md` (full VPS runbook)
+
+Quick start:
+
+```bash
+cp .env.example .env
+docker compose build
+docker compose --profile init run --rm fetch-bridge-config
+docker compose up -d
+```
