@@ -16,7 +16,9 @@ const STATUS_LABELS: Record<string, string> = {
   detected_l1: 'Deposit received',
   l1_forwarder_deployed: 'Preparing bridge',
   l1_bridging_submitted: 'Bridging to Prividium',
-  l2_arrived: 'Finalizing',
+  l2_arrived: 'Arrived on Prividium (deposit address)',
+  l2_forwarder_deployed: 'Finalizing (forwarder deployed)',
+  l2_swept_y_to_x: 'Finalizing (internal forwarding)',
   l2_vault_deployed: 'Finalizing',
   credited: 'Completed',
   pending: 'Pending',
@@ -32,6 +34,8 @@ const STATUS_STEP: Record<string, StepperStep> = {
   l1_forwarder_deployed: 'bridge',
   l1_bridging_submitted: 'bridge',
   l2_arrived: 'finalize',
+  l2_forwarder_deployed: 'finalize',
+  l2_swept_y_to_x: 'finalize',
   l2_vault_deployed: 'finalize',
   credited: 'complete'
 };
@@ -41,6 +45,8 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   l1_forwarder_deployed: 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/30',
   l1_bridging_submitted: 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/30',
   l2_arrived: 'bg-blue-500/20 text-blue-200 border border-blue-400/30',
+  l2_forwarder_deployed: 'bg-blue-500/20 text-blue-200 border border-blue-400/30',
+  l2_swept_y_to_x: 'bg-blue-500/20 text-blue-200 border border-blue-400/30',
   l2_vault_deployed: 'bg-blue-500/20 text-blue-200 border border-blue-400/30',
   credited: 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30',
   stuck: 'bg-red-500/20 text-red-200 border border-red-400/30',

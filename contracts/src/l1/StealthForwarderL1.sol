@@ -83,8 +83,20 @@ contract StealthForwarderL1 {
 
     receive() external payable {}
 
+    function _isL2Execution() internal view returns (bool) {
+        return block.chainid == l2ChainId;
+    }
+
     function sweepETH() external payable {
         uint256 bal = address(this).balance;
+        require(bal > 0, "empty");
+
+        if (_isL2Execution()) {
+            (bool ok, ) = payable(xDestination).call{value: bal}("");
+            require(ok, "eth transfer failed");
+            emit SweptETH(xDestination, bal, bytes32(0));
+            return;
+        }
 
         bytes[] memory deps = new bytes[](0);
         bytes32 txHash = IBridgehub(bridgehub).requestL2TransactionDirect{
@@ -93,7 +105,8 @@ contract StealthForwarderL1 {
             IBridgehub.L2TransactionRequestDirect({
                 chainId: l2ChainId,
                 mintValue: bal,
-                l2Contract: xDestination,
+                // Self-deposit only: sender on L1 must equal recipient on L2.
+                l2Contract: address(this),
                 l2Value: bal - msg.value,
                 l2Calldata: "",
                 l2GasLimit: 200000,
@@ -103,13 +116,19 @@ contract StealthForwarderL1 {
             })
         );
 
-        emit SweptETH(xDestination, bal - msg.value, txHash);
+        emit SweptETH(address(this), bal - msg.value, txHash);
     }
 
     function sweepERC20(address l1Token) external payable {
         // Amount should be the full token balance.
         uint256 amount = IERC20(l1Token).balanceOf(address(this));
         require(amount > 0, "empty");
+
+        if (_isL2Execution()) {
+            require(IERC20(l1Token).transfer(xDestination, amount), "transfer failed");
+            emit SweptERC20(l1Token, amount, xDestination, bytes32(0));
+            return;
+        }
 
         bytes32 tokenAssetId = NativeTokenVault(nativeTokenVault).assetId(
             l1Token
@@ -122,7 +141,8 @@ contract StealthForwarderL1 {
             "approve failed"
         );
 
-        bytes memory depositData = abi.encode(amount, xDestination, address(0));
+        // Self-deposit only: sender on L1 must equal recipient on L2.
+        bytes memory depositData = abi.encode(amount, address(this), address(0));
         bytes memory encoded = abi.encode(tokenAssetId, depositData);
         bytes memory bridgeCalldata = bytes.concat(hex"01", encoded);
 
@@ -143,6 +163,6 @@ contract StealthForwarderL1 {
             value: msg.value
         }(req);
         IERC20(l1Token).approve(nativeTokenVault, 0);
-        emit SweptERC20(l1Token, amount, xDestination, txHash);
+        emit SweptERC20(l1Token, amount, address(this), txHash);
     }
 }

@@ -5,6 +5,8 @@ export const depositStatus = [
   'l1_forwarder_deployed',
   'l1_bridging_submitted',
   'l2_arrived',
+  'l2_forwarder_deployed',
+  'l2_swept_y_to_x',
   'l2_vault_deployed',
   'l2_swept_to_R',
   'credited',

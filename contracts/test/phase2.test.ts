@@ -26,7 +26,7 @@ describe('Phase 2 contracts', function () {
     expect(after - before).to.equal(parseEther('0.1'));
   });
 
-  it('L1 forwarder receives prefunded ETH and only calls bridgehub direct tx to X', async function () {
+  it('L1 forwarder receives prefunded ETH and only calls bridgehub direct tx to Y (self)', async function () {
     const { viem } = hre;
     const [deployer, relayer] = await viem.getWalletClients();
     const publicClient = await viem.getPublicClient();
@@ -49,14 +49,44 @@ describe('Phase 2 contracts', function () {
 
     const forwarder = await viem.getContractAt('StealthForwarderL1', predicted);
     await publicClient.waitForTransactionReceipt({
-      hash: await forwarder.write.sweepETH([parseEther('0.01'), parseEther('0.2'), 500000n, 800n], {
+      hash: await forwarder.write.sweepETH([], {
         account: relayer.account,
         value: parseEther('0.01')
       })
     });
 
-    expect(await bridgehub.read.directL2Contract()).to.equal(x);
+    expect(await bridgehub.read.directL2Contract()).to.equal(predicted);
     expect(await bridgehub.read.directL2Value()).to.equal(parseEther('0.2'));
     expect(await bridgehub.read.directRefund()).to.equal(refund);
+  });
+
+  it('L2-mode forwarder locally forwards prefunded ETH to X', async function () {
+    const { viem, network } = hre;
+    const [deployer, recipient] = await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
+
+    const bridgehub = await viem.deployContract('MockBridgehub');
+    const factory = await viem.deployContract('ForwarderFactoryL1');
+
+    const salt = keccak256(toHex('fwd-l2-mode'));
+    const x = recipient.account.address;
+    const refund = '0x2222222222222222222222222222222222222222';
+    const assetRouter = '0x3333333333333333333333333333333333333333';
+    const nativeTokenVault = '0x4444444444444444444444444444444444444444';
+    const chainId = BigInt(network.config.chainId ?? 31337);
+
+    const predicted = await factory.read.computeAddress([salt, bridgehub.address, chainId, x, refund, assetRouter, nativeTokenVault]);
+    await deployer.sendTransaction({ to: predicted, value: parseEther('0.1') });
+    await publicClient.waitForTransactionReceipt({
+      hash: await factory.write.deploy([salt, bridgehub.address, chainId, x, refund, assetRouter, nativeTokenVault])
+    });
+
+    const forwarder = await viem.getContractAt('StealthForwarderL1', predicted);
+    const before = await publicClient.getBalance({ address: x });
+    await publicClient.waitForTransactionReceipt({ hash: await forwarder.write.sweepETH([]) });
+    const after = await publicClient.getBalance({ address: x });
+
+    expect(after - before).to.equal(parseEther('0.1'));
+    expect(await bridgehub.read.directL2Contract()).to.equal('0x0000000000000000000000000000000000000000');
   });
 });
