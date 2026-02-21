@@ -82,3 +82,23 @@ docker compose build
 docker compose --profile init run --rm fetch-bridge-config
 docker compose up -d
 ```
+
+# CREATE2
+
+This assumes that create2 is deployed on L2.
+
+If not:
+
+```shell
+cast send -r http://localhost:5050 0x3fab184622dc19b6109349b94811493bf2a45362 --value 0.1ether --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+
+ cast rpc --rpc-url http://localhost:5050  eth_sendRawTransaction \
+  0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf31ba02222222222222222222222222222222222222222222222222222222222222222a02222222222222222222222222222222222222222222222222222222222222222
+"0xeddf9e61fb9d8f5111840daef55e5fde0041f5702856532cdbb5a02998033d26"
+```
+
+Then check:
+
+```shell
+cast code -r http://localhost:5050 0x4e59b44847b379578588920cA78FbF26c0B4956C
+```
