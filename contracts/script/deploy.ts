@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import hre from 'hardhat';
-import { createPublicClient, createWalletClient, http } from 'viem';
+import { createPublicClient, createWalletClient, getContractAddress, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 async function main() {
@@ -11,8 +11,12 @@ async function main() {
 
   const { viem, network } = hre;
 
+  const [l1Deployer] = await viem.getWalletClients();
+  const l1PublicClient = await viem.getPublicClient();
+  const l1Nonce = await l1PublicClient.getTransactionCount({ address: l1Deployer.account.address });
+
   // Deploy L1 factory on the active hardhat network.
-  const forwarderFactoryL1 = await viem.deployContract('ForwarderFactoryL1');
+  const forwarderFactoryL1 = await viem.deployContract('ForwarderFactoryL1', [], { client: { wallet: l1Deployer } });
 
   // Deploy L2 vault factory via explicit L2 RPC + signer so it lands on L2, not the active Hardhat network.
   const l2RpcUrl = process.env.L2_RPC_URL;
@@ -31,7 +35,37 @@ async function main() {
   const l2WalletClient = createWalletClient({ account: l2Account, transport: http(l2RpcUrl, { fetchFn: authFetch }) });
   const l2PublicClient = createPublicClient({ transport: http(l2RpcUrl, { fetchFn: authFetch }) });
 
+  const l2Nonce = await l2PublicClient.getTransactionCount({ address: l2Account.address });
+  if (l2Nonce !== l1Nonce) {
+    throw new Error(`L1/L2 deployer nonce mismatch. l1Nonce=${l1Nonce} l2Nonce=${l2Nonce}. Use matching nonce/account to keep ForwarderFactoryL1 address identical.`);
+  }
+  const expectedL2ForwarderFactory = getContractAddress({ from: l2Account.address, nonce: BigInt(l2Nonce) });
+  if (expectedL2ForwarderFactory.toLowerCase() !== forwarderFactoryL1.address.toLowerCase()) {
+    throw new Error(
+      `ForwarderFactoryL1 address mismatch between L1 and L2 deployments. L1=${forwarderFactoryL1.address}, nextL2=${expectedL2ForwarderFactory}. Ensure the same deployer account and nonce on both chains.`
+    );
+  }
+
+  const forwarderFactoryArtifactPath = resolve(process.cwd(), 'artifacts/src/l1/ForwarderFactoryL1.sol/ForwarderFactoryL1.json');
+  const forwarderFactoryArtifact = JSON.parse(readFileSync(forwarderFactoryArtifactPath, 'utf8')) as {
+    abi: readonly unknown[];
+    bytecode: `0x${string}`;
+  };
+
+  const l2ForwarderFactoryTx = await l2WalletClient.deployContract({
+    chain: null,
+    abi: forwarderFactoryArtifact.abi,
+    bytecode: forwarderFactoryArtifact.bytecode,
+    args: []
+  });
+  const l2ForwarderFactoryReceipt = await l2PublicClient.waitForTransactionReceipt({ hash: l2ForwarderFactoryTx });
+  if (!l2ForwarderFactoryReceipt.contractAddress) throw new Error('L2 forwarder factory deployment did not return contractAddress');
+  if (l2ForwarderFactoryReceipt.contractAddress.toLowerCase() !== forwarderFactoryL1.address.toLowerCase()) {
+    throw new Error(`ForwarderFactoryL1 deployed at different address on L2. L1=${forwarderFactoryL1.address}, L2=${l2ForwarderFactoryReceipt.contractAddress}`);
+  }
+
   const l2DeployTx = await l2WalletClient.deployContract({
+    chain: null,
     abi: vaultFactoryArtifact.abi,
     bytecode: vaultFactoryArtifact.bytecode,
     args: []
@@ -43,11 +77,12 @@ async function main() {
   const payload = {
     l1: {
       chainId: Number(network.config.chainId ?? process.env.L1_CHAIN_ID ?? 11155111),
-      forwarderFactoryL1: forwarderFactoryL1.address,
+      forwarderFactory: forwarderFactoryL1.address,
       bridgehub: bridgehub ?? '0x0000000000000000000000000000000000000000'
     },
     l2: {
       chainId: l2ChainId,
+      forwarderFactory: l2ForwarderFactoryReceipt.contractAddress,
       vaultFactory: vaultFactoryAddress
     },
     assetRouter: process.env.ASSET_ROUTER_ADDRESS ?? '',
