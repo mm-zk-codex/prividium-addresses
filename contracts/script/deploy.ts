@@ -1,8 +1,35 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import hre from 'hardhat';
-import { createPublicClient, createWalletClient, getContractAddress, http } from 'viem';
+import { concatHex, createPublicClient, createWalletClient, getAddress, http, keccak256 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+
+const CREATE2_DEPLOYER = getAddress('0x4e59b44847b379578588920cA78FbF26c0B4956C');
+const FORWARDER_FACTORY_CREATE2_SALT = (process.env.FORWARDER_FACTORY_CREATE2_SALT ?? '0x' + '00'.repeat(32)) as `0x${string}`;
+
+function computeCreate2Address(deployer: `0x${string}`, salt: `0x${string}`, initCode: `0x${string}`): `0x${string}` {
+  const hash = keccak256(concatHex(['0xff', deployer, salt, keccak256(initCode)]));
+  return getAddress(`0x${hash.slice(-40)}`);
+}
+
+async function deployCreate2IfNeeded(params: {
+  publicClient: any;
+  sendTransaction: (tx: { to: `0x${string}`; data: `0x${string}` }) => Promise<`0x${string}`>;
+  initCode: `0x${string}`;
+  salt: `0x${string}`;
+  label: string;
+}) {
+  const { publicClient, sendTransaction, initCode, salt, label } = params;
+  const deployed = computeCreate2Address(CREATE2_DEPLOYER, salt, initCode);
+  const code = await publicClient.getCode({ address: deployed });
+  if (!code || code === '0x') {
+    const hash = await sendTransaction({ to: CREATE2_DEPLOYER, data: concatHex([salt, initCode]) });
+    await publicClient.waitForTransactionReceipt({ hash });
+    const codeAfter = await publicClient.getCode({ address: deployed });
+    if (!codeAfter || codeAfter === '0x') throw new Error(`${label} deterministic deployment failed at ${deployed}`);
+  }
+  return deployed;
+}
 
 async function main() {
   const bridgehub = process.env.BRIDGEHUB_ADDRESS as `0x${string}` | undefined;
@@ -13,10 +40,6 @@ async function main() {
 
   const [l1Deployer] = await viem.getWalletClients();
   const l1PublicClient = await viem.getPublicClient();
-  const l1Nonce = await l1PublicClient.getTransactionCount({ address: l1Deployer.account.address });
-
-  // Deploy L1 factory on the active hardhat network.
-  const forwarderFactoryL1 = await viem.deployContract('ForwarderFactoryL1', [], { client: { wallet: l1Deployer } });
 
   // Deploy L2 vault factory via explicit L2 RPC + signer so it lands on L2, not the active Hardhat network.
   const l2RpcUrl = process.env.L2_RPC_URL;
@@ -35,33 +58,29 @@ async function main() {
   const l2WalletClient = createWalletClient({ account: l2Account, transport: http(l2RpcUrl, { fetchFn: authFetch }) });
   const l2PublicClient = createPublicClient({ transport: http(l2RpcUrl, { fetchFn: authFetch }) });
 
-  const l2Nonce = await l2PublicClient.getTransactionCount({ address: l2Account.address });
-  if (l2Nonce !== l1Nonce) {
-    throw new Error(`L1/L2 deployer nonce mismatch. l1Nonce=${l1Nonce} l2Nonce=${l2Nonce}. Use matching nonce/account to keep ForwarderFactoryL1 address identical.`);
-  }
-  const expectedL2ForwarderFactory = getContractAddress({ from: l2Account.address, nonce: BigInt(l2Nonce) });
-  if (expectedL2ForwarderFactory.toLowerCase() !== forwarderFactoryL1.address.toLowerCase()) {
-    throw new Error(
-      `ForwarderFactoryL1 address mismatch between L1 and L2 deployments. L1=${forwarderFactoryL1.address}, nextL2=${expectedL2ForwarderFactory}. Ensure the same deployer account and nonce on both chains.`
-    );
-  }
-
   const forwarderFactoryArtifactPath = resolve(process.cwd(), 'artifacts/src/l1/ForwarderFactoryL1.sol/ForwarderFactoryL1.json');
   const forwarderFactoryArtifact = JSON.parse(readFileSync(forwarderFactoryArtifactPath, 'utf8')) as {
-    abi: readonly unknown[];
     bytecode: `0x${string}`;
   };
 
-  const l2ForwarderFactoryTx = await l2WalletClient.deployContract({
-    chain: null,
-    abi: forwarderFactoryArtifact.abi,
-    bytecode: forwarderFactoryArtifact.bytecode,
-    args: []
+  const forwarderFactoryL1Address = await deployCreate2IfNeeded({
+    publicClient: l1PublicClient,
+    sendTransaction: ({ to, data }) => l1Deployer.sendTransaction({ to, data }),
+    initCode: forwarderFactoryArtifact.bytecode,
+    salt: FORWARDER_FACTORY_CREATE2_SALT,
+    label: 'ForwarderFactoryL1 on L1'
   });
-  const l2ForwarderFactoryReceipt = await l2PublicClient.waitForTransactionReceipt({ hash: l2ForwarderFactoryTx });
-  if (!l2ForwarderFactoryReceipt.contractAddress) throw new Error('L2 forwarder factory deployment did not return contractAddress');
-  if (l2ForwarderFactoryReceipt.contractAddress.toLowerCase() !== forwarderFactoryL1.address.toLowerCase()) {
-    throw new Error(`ForwarderFactoryL1 deployed at different address on L2. L1=${forwarderFactoryL1.address}, L2=${l2ForwarderFactoryReceipt.contractAddress}`);
+
+  const forwarderFactoryL2Address = await deployCreate2IfNeeded({
+    publicClient: l2PublicClient,
+    sendTransaction: ({ to, data }) => l2WalletClient.sendTransaction({ chain: null, to, data }),
+    initCode: forwarderFactoryArtifact.bytecode,
+    salt: FORWARDER_FACTORY_CREATE2_SALT,
+    label: 'ForwarderFactoryL1 on L2'
+  });
+
+  if (forwarderFactoryL1Address.toLowerCase() !== forwarderFactoryL2Address.toLowerCase()) {
+    throw new Error(`ForwarderFactoryL1 deterministic address mismatch. L1=${forwarderFactoryL1Address}, L2=${forwarderFactoryL2Address}`);
   }
 
   const l2DeployTx = await l2WalletClient.deployContract({
@@ -77,12 +96,12 @@ async function main() {
   const payload = {
     l1: {
       chainId: Number(network.config.chainId ?? process.env.L1_CHAIN_ID ?? 11155111),
-      forwarderFactory: forwarderFactoryL1.address,
+      forwarderFactory: forwarderFactoryL1Address,
       bridgehub: bridgehub ?? '0x0000000000000000000000000000000000000000'
     },
     l2: {
       chainId: l2ChainId,
-      forwarderFactory: l2ForwarderFactoryReceipt.contractAddress,
+      forwarderFactory: forwarderFactoryL2Address,
       vaultFactory: vaultFactoryAddress
     },
     assetRouter: process.env.ASSET_ROUTER_ADDRESS ?? '',

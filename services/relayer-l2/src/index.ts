@@ -24,7 +24,7 @@ const tokenMap = Object.fromEntries(bridgeConfig.tokens.map((t) => [t.l1Address.
 const maxAttempts = Number(process.env.MAX_ATTEMPTS ?? 5);
 const baseDelaySeconds = Number(process.env.BASE_DELAY_SECONDS ?? 15);
 const maxDelaySeconds = Number(process.env.MAX_DELAY_SECONDS ?? 900);
-const forwarderFactoryL2 = getAddress(process.env.L2_FORWARDER_FACTORY ?? bridgeConfig.l1.forwarderFactory);
+const forwarderFactoryL2 = getAddress(bridgeConfig.l1.forwarderFactory);
 
 function computeNextAttemptAt(nowMs: number, attempts: number): number {
   const delaySec = Math.min(2 ** attempts * baseDelaySeconds, maxDelaySeconds);

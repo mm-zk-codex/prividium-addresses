@@ -49,7 +49,7 @@ describe('Phase 2 contracts', function () {
 
     const forwarder = await viem.getContractAt('StealthForwarderL1', predicted);
     await publicClient.waitForTransactionReceipt({
-      hash: await forwarder.write.sweepETH([parseEther('0.01'), parseEther('0.2'), 500000n, 800n], {
+      hash: await forwarder.write.sweepETH([], {
         account: relayer.account,
         value: parseEther('0.01')
       })

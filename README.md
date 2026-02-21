@@ -38,9 +38,8 @@ This repo keeps the Phase 3 behavior (single Y deposit address, ETH + supported 
 
 `infra/bridge-config.json` includes L1/L2 addresses and token metadata.
 
-Optional env override: `L2_FORWARDER_FACTORY` can be set if the forwarder factory address on L2 differs from the L1 config entry.
 
-When running `contracts/script/deploy.ts`, the script now deploys `ForwarderFactoryL1` on both L1 and L2 and enforces identical addresses. This requires using the same deployer account with matching nonce on both chains.
+When running `contracts/script/deploy.ts`, the script now deploys `ForwarderFactoryL1` on both L1 and L2 via CREATE2 and enforces identical addresses across chains.
 
 Fetch/update it with:
 
