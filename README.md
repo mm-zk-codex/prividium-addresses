@@ -1,6 +1,6 @@
 # Prividium Addresses PoC (Unified Frontend)
 
-This repo keeps the Phase 3 behavior (single Y deposit address, ETH + supported ERC20 autodetect, bridge to vault X, sweep to recipient R) and now ships a **single frontend app** with both sender and recipient experiences.
+This repo keeps the Phase 3 behavior (single Y deposit address, ETH + supported ERC20 autodetect, bridge to Y on L2 (self-deposit), then forward Y->X->R) and now ships a **single frontend app** with both sender and recipient experiences.
 
 ## Components
 
@@ -9,6 +9,9 @@ This repo keeps the Phase 3 behavior (single Y deposit address, ETH + supported 
 - `services/resolver`: alias/auth + deterministic address issuance + `/accepted-tokens`, `/alias/exists`, retry API
 - `services/relayer-l1`: auto-detect ETH/supported ERC20, bridge, retry/backoff + stuck
 - `services/relayer-l2`: L2 arrival processing + retry/backoff + stuck
+
+- L1 forwarder now enforces **self-deposit only** on bridge calls (destination on L2 is always `Y` / `address(this)`).
+- L2 relayer now performs an extra internal hop: deploy/sweep `Y -> X`, then deploy/sweep `X -> R`.
 - `apps/web`: unified UI with top navigation:
   - **Send** (public)
   - **Recipient Portal** (login-gated)
@@ -34,6 +37,8 @@ This repo keeps the Phase 3 behavior (single Y deposit address, ETH + supported 
 ## Bridge config
 
 `infra/bridge-config.json` includes L1/L2 addresses and token metadata.
+
+Optional env override: `L2_FORWARDER_FACTORY` can be set if the forwarder factory address on L2 differs from the L1 config entry.
 
 Fetch/update it with:
 

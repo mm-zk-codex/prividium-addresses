@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import dotenv from 'dotenv';
-import { ONE_WAY_VAULT_ABI, VAULT_FACTORY_ABI } from '@prividium-poc/types';
+import { FORWARDER_FACTORY_L1_ABI, ONE_WAY_VAULT_ABI, STEALTH_FORWARDER_L1_ABI, VAULT_FACTORY_ABI } from '@prividium-poc/types';
 import { loadBridgeConfig } from '@prividium-poc/config';
 import { createPublicClient, createWalletClient, erc20Abi, getAddress, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -24,6 +24,7 @@ const tokenMap = Object.fromEntries(bridgeConfig.tokens.map((t) => [t.l1Address.
 const maxAttempts = Number(process.env.MAX_ATTEMPTS ?? 5);
 const baseDelaySeconds = Number(process.env.BASE_DELAY_SECONDS ?? 15);
 const maxDelaySeconds = Number(process.env.MAX_DELAY_SECONDS ?? 900);
+const forwarderFactoryL2 = getAddress(process.env.L2_FORWARDER_FACTORY ?? bridgeConfig.l1.forwarderFactory);
 
 function computeNextAttemptAt(nowMs: number, attempts: number): number {
   const delaySec = Math.min(2 ** attempts * baseDelaySeconds, maxDelaySeconds);
@@ -37,6 +38,32 @@ function markEventError(eventId: number, err: unknown) {
   const stuck = attempts >= maxAttempts ? 1 : 0;
   const nextAttemptAt = stuck ? now : computeNextAttemptAt(now, attempts);
   db.prepare('UPDATE deposit_events SET status=?, error=?, attempts=?, nextAttemptAt=?, stuck=?, lastErrorAt=? WHERE id=?').run(stuck ? 'stuck' : 'l2_failed', String(err), attempts, nextAttemptAt, stuck, now, eventId);
+}
+
+async function ensureForwarderAndSweepYtoX(y: `0x${string}`, request: any, kind: 'ETH' | 'ERC20', l2Token?: `0x${string}` | null) {
+  const code = await publicClient.getCode({ address: y });
+  let deployTx: `0x${string}` | null = null;
+  if (!code || code === '0x') {
+    const refundRecipient = process.env.REFUND_RECIPIENT_L2 ?? request.recipientPrividiumAddress;
+    deployTx = await walletClient.writeContract({
+      chain: null,
+      address: forwarderFactoryL2,
+      abi: FORWARDER_FACTORY_L1_ABI,
+      functionName: 'deploy',
+      args: [request.saltY, bridgeConfig.l1.bridgehub, BigInt(bridgeConfig.l2.chainId), request.l2VaultAddressX, refundRecipient, bridgeConfig.l1.assetRouter, bridgeConfig.l1.nativeTokenVault]
+    });
+    await publicClient.waitForTransactionReceipt({ hash: deployTx });
+  }
+
+  const sweepTx = await walletClient.writeContract({
+    chain: null,
+    address: y,
+    abi: STEALTH_FORWARDER_L1_ABI,
+    functionName: kind === 'ETH' ? 'sweepETH' : 'sweepERC20',
+    args: kind === 'ETH' ? [] : [getAddress(l2Token!)]
+  });
+  await publicClient.waitForTransactionReceipt({ hash: sweepTx });
+  return { deployTx, sweepTx };
 }
 
 async function ensureVaultAndSweep(x: `0x${string}`, saltX: `0x${string}`, recipient: `0x${string}`, kind: 'ETH' | 'ERC20', token?: string | null) {
@@ -59,22 +86,42 @@ async function ensureVaultAndSweep(x: `0x${string}`, saltX: `0x${string}`, recip
 }
 
 async function processSubmittedEvent(event: any, request: any, recipient: `0x${string}`) {
+  const y = getAddress(request.l1DepositAddressY);
   const x = getAddress(request.l2VaultAddressX);
   const kind = event.kind as 'ETH' | 'ERC20';
-  const l2Token = kind === 'ERC20' ? getAddress(tokenMap[(event.l1TokenAddress ?? '').toLowerCase()] ?? event.l1TokenAddress) : null;
-  const bal = kind === 'ETH' ? await publicClient.getBalance({ address: x }) : ((await publicClient.readContract({ address: l2Token!, abi: erc20Abi, functionName: 'balanceOf', args: [x] })) as bigint);
-  if (bal === 0n) return;
+  const mapped = tokenMap[(event.l1TokenAddress ?? '').toLowerCase()] ?? event.l1TokenAddress;
+  const l2Token = kind === 'ERC20' ? getAddress(mapped) : null;
+  const yBal = kind === 'ETH'
+    ? await publicClient.getBalance({ address: y })
+    : ((await publicClient.readContract({ address: l2Token!, abi: erc20Abi, functionName: 'balanceOf', args: [y] })) as bigint);
+  if (yBal === 0n) return;
 
   db.prepare('UPDATE deposit_events SET status=?, l2ArrivedAt=? WHERE id=?').run('l2_arrived', Date.now(), event.id);
+
+  const yStep = await ensureForwarderAndSweepYtoX(y, request, kind, l2Token);
+  if (yStep.deployTx) {
+    db.prepare('UPDATE deposit_events SET status=?, l2DeployForwarderTxHash=? WHERE id=?').run('l2_forwarder_deployed', yStep.deployTx, event.id);
+  }
+  db.prepare('UPDATE deposit_events SET status=?, l2SweepYtoXTxHash=? WHERE id=?').run('l2_swept_y_to_x', yStep.sweepTx, event.id);
+
+  const xBal = kind === 'ETH'
+    ? await publicClient.getBalance({ address: x })
+    : ((await publicClient.readContract({ address: l2Token!, abi: erc20Abi, functionName: 'balanceOf', args: [x] })) as bigint);
+  if (xBal === 0n) {
+    throw new Error('sweep Y->X executed but X has zero balance');
+  }
+
   const { deployTx, sweepTx } = await ensureVaultAndSweep(x, request.saltX, recipient, kind, l2Token);
-  if (deployTx) db.prepare('UPDATE deposit_events SET status=?, l2DeployTxHash=? WHERE id=?').run('l2_vault_deployed', deployTx, event.id);
-  db.prepare('UPDATE deposit_events SET status=?, l2SweepTxHash=? WHERE id=?').run('credited', sweepTx, event.id);
+  if (deployTx) {
+    db.prepare('UPDATE deposit_events SET status=?, l2DeployVaultTxHash=?, l2DeployTxHash=? WHERE id=?').run('l2_vault_deployed', deployTx, deployTx, event.id);
+  }
+  db.prepare('UPDATE deposit_events SET status=?, l2SweepXtoRTxHash=?, l2SweepTxHash=? WHERE id=?').run('credited', sweepTx, sweepTx, event.id);
   db.prepare('UPDATE deposit_requests SET lastActivityAt=? WHERE trackingId=?').run(Date.now(), request.trackingId);
 }
 
 async function tick() {
   const rows = db
-    .prepare(`SELECT e.*, dr.saltX, dr.l2VaultAddressX, dr.trackingId, COALESCE(dr.recipientPrividiumAddress, a.recipientPrividiumAddress) AS recipientPrividiumAddress
+    .prepare(`SELECT e.*, dr.saltY, dr.saltX, dr.l1DepositAddressY, dr.l2VaultAddressX, dr.trackingId, COALESCE(dr.recipientPrividiumAddress, a.recipientPrividiumAddress) AS recipientPrividiumAddress
       FROM deposit_events e
       JOIN deposit_requests dr ON dr.trackingId = e.trackingId
       JOIN aliases a ON a.aliasKey = dr.aliasKey
@@ -95,7 +142,6 @@ async function tick() {
 setInterval(() => void tick(), Number(process.env.RELAYER_POLL_MS ?? 7000));
 void tick();
 
-
 async function authFetch(url: any, init = {}) {
   const serviceToken = await getServiceToken();
 
@@ -104,13 +150,12 @@ async function authFetch(url: any, init = {}) {
     Authorization: `Bearer ${serviceToken}`
   };
 
-  let response = await fetch(url, { ...init, headers });
+  const response = await fetch(url, { ...init, headers });
 
   return response;
 }
 
 let cached = { token: null, expiresAt: 0 };
-
 
 export async function getServiceToken() {
   if (cached.token && Date.now() < cached.expiresAt) {
@@ -118,14 +163,14 @@ export async function getServiceToken() {
   }
 
   const account = privateKeyToAccount(pk as any);
-  console.log("requesting siwe from ", `${permissionsApiBaseUrl}/api/siwe-messages`);
+  console.log('requesting siwe from ', `${permissionsApiBaseUrl}/api/siwe-messages`);
   const msgRes = await fetch(`${permissionsApiBaseUrl}/api/siwe-messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ address: account.address, domain })
   });
   if (!msgRes.ok) {
-    console.log("Error: ", await msgRes.text());
+    console.log('Error: ', await msgRes.text());
     throw new Error('Failed to request SIWE message for service auth');
   }
   const { msg } = await msgRes.json();

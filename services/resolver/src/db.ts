@@ -53,6 +53,10 @@ export function openDb(path: string) {
       l1DeployTxHash TEXT,
       l1BridgeTxHash TEXT,
       l2ArrivedAt INTEGER,
+      l2DeployForwarderTxHash TEXT,
+      l2SweepYtoXTxHash TEXT,
+      l2DeployVaultTxHash TEXT,
+      l2SweepXtoRTxHash TEXT,
       l2DeployTxHash TEXT,
       l2SweepTxHash TEXT,
       error TEXT,
@@ -96,6 +100,11 @@ export function openDb(path: string) {
       (SELECT a.recipientPrividiumAddress FROM aliases a WHERE a.aliasKey = deposit_requests.aliasKey)
     )
   `);
+
+  ensureColumn(db, 'deposit_events', 'l2DeployForwarderTxHash TEXT', 'l2DeployForwarderTxHash');
+  ensureColumn(db, 'deposit_events', 'l2SweepYtoXTxHash TEXT', 'l2SweepYtoXTxHash');
+  ensureColumn(db, 'deposit_events', 'l2DeployVaultTxHash TEXT', 'l2DeployVaultTxHash');
+  ensureColumn(db, 'deposit_events', 'l2SweepXtoRTxHash TEXT', 'l2SweepXtoRTxHash');
 
   ensureColumn(db, 'deposit_events', 'attempts INTEGER DEFAULT 0', 'attempts');
   ensureColumn(db, 'deposit_events', 'nextAttemptAt INTEGER DEFAULT 0', 'nextAttemptAt');
