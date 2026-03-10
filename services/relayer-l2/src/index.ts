@@ -126,7 +126,7 @@ async function tick() {
       JOIN deposit_requests dr ON dr.trackingId = e.trackingId
       JOIN aliases a ON a.aliasKey = dr.aliasKey
       WHERE (e.status='l1_bridging_submitted' OR e.status='l2_failed') AND e.stuck=0 AND e.nextAttemptAt<=?
-      ORDER BY e.createdAt ASC LIMIT 30`)
+      ORDER BY e.createdAt ASC LIMIT 300`)
     .all(Date.now()) as any[];
 
   for (const row of rows) {
