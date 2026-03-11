@@ -132,13 +132,13 @@ export function SendPage({ resolver }: { resolver: string }) {
           </div>
         </div>
 
-        <div className="form-row">
+        <div className="form-group">
           <input placeholder="recipient email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <button style={{ width: 'auto' }} onClick={() => void continueFlow()}>Continue</button>
         </div>
         <div className="form-group">
           <input placeholder="optional suffix" value={suffix} onChange={(e) => setSuffix(e.target.value)} />
         </div>
+        <button style={{ width: 'auto' }} onClick={() => void continueFlow()}>Continue</button>
         {message ? <div className="alert alert-info">{message}</div> : null}
 
         <div className="subsection-title">Supported tokens</div>
