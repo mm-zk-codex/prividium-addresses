@@ -1,9 +1,10 @@
+import type { Route } from '../app/types';
 import React from 'react';
 import { usePrividiumAuth } from '../auth/PrividiumAuth';
 
 type Props = {
-  route: '/send' | '/portal';
-  navigate: (to: '/send' | '/portal') => void;
+  route: Route;
+  navigate: (to: Route) => void;
   children: React.ReactNode;
 };
 

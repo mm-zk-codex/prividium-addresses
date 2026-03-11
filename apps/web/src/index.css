@@ -306,6 +306,30 @@ label {
   color: #262b33;
 }
 
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.label-row label {
+  margin-bottom: 0;
+}
+
+.max-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: #070ea0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.max-link:hover {
+  color: #050a70;
+}
+
 input,
 select {
   width: 100%;
@@ -493,6 +517,23 @@ button.small {
 
 .alert-info-tight {
   margin-bottom: 0;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.info-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.info-value {
+  font-size: 13px;
 }
 
 .aave-info {

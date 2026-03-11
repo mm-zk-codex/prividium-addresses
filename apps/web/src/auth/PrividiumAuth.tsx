@@ -1,41 +1,37 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { createPrividiumChain } from 'prividium';
-import { defineChain } from 'viem';
+import type { Address, Transport } from 'viem';
+import { prividium } from '../app/prividium';
 
 type AuthContextValue = {
   isAuthenticated: boolean;
   displayName: string;
   walletAddress: string;
+  walletAddresses: string[];
   authHeaders: Record<string, string>;
+  transport: Transport;
+  authorizeTransaction: (params: {
+    walletAddress: Address;
+    toAddress: Address;
+    nonce: number;
+    value: bigint;
+  }) => Promise<void>;
+  addNetworkToWallet: () => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };
-
-const chain = defineChain({
-  id: 11155111,
-  name: 'Sepolia',
-  nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [import.meta.env.VITE_PRIVIDIUM_RPC_URL ?? ''] } }
-});
-
-const prividium = createPrividiumChain({
-  clientId: import.meta.env.VITE_PRIVIDIUM_CLIENT_ID!,
-  chain,
-  authBaseUrl: import.meta.env.VITE_PRIVIDIUM_AUTH_BASE_URL!,
-  prividiumApiBaseUrl: import.meta.env.VITE_PRIVIDIUM_API_BASE_URL!,
-  redirectUrl: `${window.location.origin}/auth/callback.html`
-});
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function PrividiumAuthProvider({ children }: { children: React.ReactNode }) {
   const [displayName, setDisplayName] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
+  const [walletAddresses, setWalletAddresses] = useState<string[]>([]);
 
   const clear = () => {
     setDisplayName('');
     setWalletAddress('');
+    setWalletAddresses([]);
   };
 
   const refresh = async () => {
@@ -45,7 +41,11 @@ export function PrividiumAuthProvider({ children }: { children: React.ReactNode 
     }
     try {
       const user = await prividium.fetchUser();
-      setWalletAddress((user.wallets?.[0] as any)?.walletAddress ?? '');
+      const nextWalletAddresses = (user.wallets ?? [])
+        .map((wallet: any) => wallet?.walletAddress ?? '')
+        .filter((wallet: string): wallet is string => Boolean(wallet));
+      setWalletAddresses(nextWalletAddresses);
+      setWalletAddress(nextWalletAddresses[0] ?? '');
       setDisplayName(user.displayName ?? '');
     } catch {
       clear();
@@ -73,12 +73,20 @@ export function PrividiumAuthProvider({ children }: { children: React.ReactNode 
       isAuthenticated: Boolean(displayName && walletAddress),
       displayName,
       walletAddress,
+      walletAddresses,
       authHeaders: (prividium.getAuthHeaders() ?? {}) as Record<string, string>,
+      transport: prividium.transport,
+      authorizeTransaction: async (params) => {
+        await prividium.authorizeTransaction(params);
+      },
+      addNetworkToWallet: async () => {
+        await prividium.addNetworkToWallet();
+      },
       login,
       logout,
       refresh
     }),
-    [displayName, walletAddress]
+    [displayName, walletAddress, walletAddresses]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -36,5 +36,6 @@ export const statusStep = (status?: string, stuck?: boolean): StepperStep => {
 };
 
 export function getInitialRoute(): Route {
+  if (window.location.pathname.startsWith('/transfer')) return '/transfer';
   return window.location.pathname.startsWith('/portal') ? '/portal' : '/send';
 }

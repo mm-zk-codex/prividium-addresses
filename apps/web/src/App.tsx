@@ -6,6 +6,7 @@ import { Layout } from './components/Layout';
 import { LoginGate } from './components/LoginGate';
 import { PortalPage } from './pages/PortalPage';
 import { SendPage } from './pages/SendPage';
+import { TransferPage } from './pages/TransferPage';
 
 export function App() {
   const resolver = import.meta.env.VITE_RESOLVER_URL ?? 'http://localhost:4000';
@@ -28,10 +29,13 @@ export function App() {
       <div className="route-toggle-wrap">
         <div className="route-toggle" role="tablist" aria-label="Primary views">
           <button className={`route-toggle-btn ${route === '/send' ? 'active' : ''}`} onClick={() => navigate('/send')}>
-            Send
+            Deposit
           </button>
           <button className={`route-toggle-btn ${route === '/portal' ? 'active' : ''}`} onClick={() => navigate('/portal')}>
             Recipient Portal
+          </button>
+          <button className={`route-toggle-btn ${route === '/transfer' ? 'active' : ''}`} onClick={() => navigate('/transfer')}>
+            Transfer
           </button>
         </div>
       </div>
@@ -45,6 +49,8 @@ export function App() {
             navigate('/portal');
           }} />
         )
+      ) : route === '/transfer' ? (
+        <TransferPage />
       ) : (
         <SendPage resolver={resolver} />
       )}

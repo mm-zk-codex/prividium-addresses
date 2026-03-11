@@ -330,10 +330,12 @@ export function PortalPage({ resolver }: { resolver: string }) {
               <input placeholder="optional suffix" value={suffixInput} onChange={(e) => setSuffixInput(e.target.value)} />
               <button className="receive-claim-btn" style={{ width: 'auto' }} onClick={() => void registerAlias()}>Register alias</button>
               <button className="secondary-brand" style={{ width: 'auto' }} onClick={() => void loadDeposits()}>Refresh</button>
-              {rows.some((r) => (r.events ?? []).some((e: any) => e.stuck)) ? (
-                <button style={{ width: 'auto' }} onClick={() => void retryAllStuck()}>Retry all stuck</button>
-              ) : null}
             </div>
+            {rows.some((r) => (r.events ?? []).some((e: any) => e.stuck)) ? (
+              <div className="button-row">
+                <button style={{ width: 'auto' }} onClick={() => void retryAllStuck()}>Retry all stuck</button>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
