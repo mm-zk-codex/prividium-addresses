@@ -150,6 +150,14 @@ export function PortalPage({ resolver }: { resolver: string }) {
     void loadDeposits();
   }, [auth.isAuthenticated, auth.displayName, auth.walletAddress]);
 
+  useEffect(() => {
+    if (!auth.isAuthenticated || !isAliasRegistered) return;
+    const interval = window.setInterval(() => {
+      void loadDeposits();
+    }, 2500);
+    return () => window.clearInterval(interval);
+  }, [auth.isAuthenticated, auth.displayName, auth.walletAddress, isAliasRegistered]);
+
   const registerAlias = async () => {
     const headers = { 'content-type': 'application/json', ...auth.authHeaders };
     const normalizedSuffix = normalizeSuffix(suffixInput);
