@@ -152,7 +152,14 @@ export function TransferPage() {
         </div>
 
         {!auth.isAuthenticated ? (
-          <div className="alert alert-info">Log into Prividium to use transfers.</div>
+          <div className="send-wallet-box">
+            <div className="tab-subtitle">Log into Prividium to use transfers.</div>
+            <div className="button-row">
+              <button style={{ width: 'auto' }} onClick={() => void auth.login()}>
+                Login with Prividium
+              </button>
+            </div>
+          </div>
         ) : !isConnected ? (
           <div className="send-wallet-box">
             <div className="tab-subtitle">Connect your wallet to access the transfer form.</div>

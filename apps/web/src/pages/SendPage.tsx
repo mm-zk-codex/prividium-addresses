@@ -7,12 +7,11 @@ import { SendDepositPanel } from '../components/SendDepositPanel';
 
 export function SendPage({ resolver }: { resolver: string }) {
   const [email, setEmail] = useState('');
-  const [suffix, setSuffix] = useState('');
   const [message, setMessage] = useState('');
   const [req, setReq] = useState<any>(null);
   const [status, setStatus] = useState<any>(null);
   const [acceptedTokens, setAcceptedTokens] = useState<SupportedToken[]>([]);
-  const [lastPayload, setLastPayload] = useState<{ email: string; suffix?: string } | null>(null);
+  const [lastPayload, setLastPayload] = useState<{ email: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string>();
   const [depositTab, setDepositTab] = useState<SendDepositTab>('details');
 
@@ -53,7 +52,7 @@ export function SendPage({ resolver }: { resolver: string }) {
     setStatus(data);
   };
 
-  const requestDeposit = async (payload: { email: string; suffix?: string }) => {
+  const requestDeposit = async (payload: { email: string }) => {
     const r = await fetch(`${resolver}/deposit/request`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -76,15 +75,11 @@ export function SendPage({ resolver }: { resolver: string }) {
     const existsResp = await fetch(`${resolver}/alias/exists`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, suffix: suffix || undefined })
+      body: JSON.stringify({ email })
     });
     const existsData = (await existsResp.json()) as { result: AliasResult };
     if (existsData.result === 'match') {
-      await requestDeposit({ email, suffix: suffix || undefined });
-      return;
-    }
-    if (existsData.result === 'maybe_needs_suffix') {
-      setMessage('This recipient might require a suffix. Add suffix and continue.');
+      await requestDeposit({ email });
       return;
     }
     setMessage('Recipient may need to register in Prividium before receiving deposits.');
@@ -134,9 +129,6 @@ export function SendPage({ resolver }: { resolver: string }) {
 
         <div className="form-group">
           <input placeholder="recipient email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <input placeholder="optional suffix" value={suffix} onChange={(e) => setSuffix(e.target.value)} />
         </div>
         <button style={{ width: 'auto' }} onClick={() => void continueFlow()}>Continue</button>
         {message ? <div className="alert alert-info">{message}</div> : null}

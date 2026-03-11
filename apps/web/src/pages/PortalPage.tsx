@@ -1,40 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { aliasKeyFromParts, normalizeEmail } from '@prividium-poc/types';
+import { aliasKeyFromParts } from '@prividium-poc/types';
 import { usePrividiumAuth } from '../auth/PrividiumAuth';
 import type { AliasResult, SupportedToken } from '../app/types';
 import { formatBalanceValue, hasValue, normalizeStatus, shortAddress } from '../app/utils';
 
-function portalSuffixStorageKey(displayName?: string) {
-  const normalized = normalizeEmail(displayName ?? '');
-  return normalized ? `portal_suffix:${normalized}` : null;
-}
-
-function portalSuffixesStorageKey(displayName?: string) {
-  const normalized = normalizeEmail(displayName ?? '');
-  return normalized ? `portal_suffixes:${normalized}` : null;
-}
-
-function normalizeSuffix(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function toAliasLabel(email: string, suffix: string) {
-  const normalizedEmail = normalizeEmail(email);
-  return `${normalizedEmail}${suffix ? `#${suffix}` : ''}`;
-}
-
 export function PortalPage({ resolver }: { resolver: string }) {
   const auth = usePrividiumAuth();
-  const [suffixInput, setSuffixInput] = useState('');
-  const [registeredSuffixes, setRegisteredSuffixes] = useState<string[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [showInactiveAddresses, setShowInactiveAddresses] = useState(false);
   const [isAliasRegistered, setIsAliasRegistered] = useState(false);
   const [acceptedTokens, setAcceptedTokens] = useState<SupportedToken[]>([]);
-  const registeredAliases = useMemo(
-    () => auth.displayName ? registeredSuffixes.map((suffix) => toAliasLabel(auth.displayName, suffix)) : [],
-    [auth.displayName, registeredSuffixes]
-  );
   const tokenByAddress = useMemo(
     () => Object.fromEntries(acceptedTokens.map((token) => [token.l1Address.toLowerCase(), token])),
     [acceptedTokens]
@@ -55,82 +30,41 @@ export function PortalPage({ resolver }: { resolver: string }) {
     }
   };
 
-  const loadRegisteredSuffixes = async () => {
-    if (!auth.displayName) {
-      setIsAliasRegistered(false);
-      setRegisteredSuffixes([]);
-      return [];
-    }
-    const suffixesKey = portalSuffixesStorageKey(auth.displayName);
-    const storedSuffixes = suffixesKey ? JSON.parse(window.localStorage.getItem(suffixesKey) ?? '[]') as string[] : [];
-    const uniqueSuffixes = [...new Set(storedSuffixes.map(normalizeSuffix))];
-    if (uniqueSuffixes.length === 0) {
-      const baseResponse = await fetch(`${resolver}/alias/exists`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: auth.displayName, suffix: '' })
-      });
-      if (!baseResponse.ok) {
-        setIsAliasRegistered(false);
-        setRegisteredSuffixes([]);
-        return [];
-      }
-      const baseData = (await baseResponse.json()) as { result: AliasResult };
-      const suffixes = baseData.result === 'match' ? [''] : [];
-      setIsAliasRegistered(suffixes.length > 0);
-      setRegisteredSuffixes(suffixes);
-      return suffixes;
-    }
-    const checks = await Promise.all(uniqueSuffixes.map(async (suffix) => {
-      const response = await fetch(`${resolver}/alias/exists`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: auth.displayName, suffix })
-      });
-      if (!response.ok) return null;
-      const data = (await response.json()) as { result: AliasResult };
-      return data.result === 'match' ? suffix : null;
-    }));
-    const suffixes = checks.filter((value): value is string => value !== null);
-    setIsAliasRegistered(suffixes.length > 0);
-    setRegisteredSuffixes(suffixes);
-    return suffixes;
-  };
-
-  useEffect(() => {
-    const suffixKey = portalSuffixStorageKey(auth.displayName);
-    const suffixesKey = portalSuffixesStorageKey(auth.displayName);
-    if (!suffixKey || !suffixesKey) {
-      setSuffixInput('');
-      setRegisteredSuffixes([]);
-      return;
-    }
-    const savedSuffix = window.localStorage.getItem(suffixKey);
-    const savedSuffixes = JSON.parse(window.localStorage.getItem(suffixesKey) ?? '[]') as string[];
-    if (savedSuffix !== null) setSuffixInput(savedSuffix);
-    setRegisteredSuffixes([...new Set(savedSuffixes.map(normalizeSuffix))]);
-  }, [auth.displayName]);
-
   const loadDeposits = async () => {
     if (!auth.displayName) return;
-    const suffixes = await loadRegisteredSuffixes();
-    if (suffixes.length === 0) {
+
+    const existsResponse = await fetch(`${resolver}/alias/exists`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: auth.displayName })
+    });
+    if (!existsResponse.ok) {
+      setIsAliasRegistered(false);
       setRows([]);
       return;
     }
-    const normalizedEmail = normalizeEmail(auth.displayName);
-    const responses = await Promise.all(suffixes.map(async (suffix) => {
-      const aliasKey = aliasKeyFromParts(normalizedEmail, suffix);
-      const resp = await fetch(`${resolver}/alias/deposits?aliasKey=${aliasKey}`);
-      if (!resp.ok) return [];
-      const data = await resp.json() as any[];
-      return data.map((row) => ({
+
+    const existsData = (await existsResponse.json()) as { result: AliasResult };
+    const registered = existsData.result === 'match';
+    setIsAliasRegistered(registered);
+    if (!registered) {
+      setRows([]);
+      return;
+    }
+
+    const aliasKey = aliasKeyFromParts(auth.displayName, '');
+    const resp = await fetch(`${resolver}/alias/deposits?aliasKey=${aliasKey}`);
+    if (!resp.ok) {
+      setRows([]);
+      return;
+    }
+    const data = await resp.json() as any[];
+    setRows(
+      data.map((row) => ({
         ...row,
-        alias: toAliasLabel(auth.displayName, suffix),
-        aliasSuffix: suffix
-      }));
-    }));
-    setRows(responses.flat());
+        alias: auth.displayName
+      }))
+    );
   };
 
   useEffect(() => {
@@ -144,7 +78,6 @@ export function PortalPage({ resolver }: { resolver: string }) {
     if (!auth.isAuthenticated) {
       setRows([]);
       setIsAliasRegistered(false);
-      setRegisteredSuffixes([]);
       return;
     }
     void loadDeposits();
@@ -160,42 +93,36 @@ export function PortalPage({ resolver }: { resolver: string }) {
 
   const registerAlias = async () => {
     const headers = { 'content-type': 'application/json', ...auth.authHeaders };
-    const normalizedSuffix = normalizeSuffix(suffixInput);
     await fetch(`${resolver}/alias/register`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ suffix: normalizedSuffix, recipientPrividiumAddress: auth.walletAddress })
+      body: JSON.stringify({ recipientPrividiumAddress: auth.walletAddress })
     });
-    const storageKey = portalSuffixStorageKey(auth.displayName);
-    const suffixesKey = portalSuffixesStorageKey(auth.displayName);
-    if (storageKey) window.localStorage.setItem(storageKey, normalizedSuffix);
-    if (suffixesKey) {
-      const merged = [...new Set([...registeredSuffixes, normalizedSuffix])];
-      window.localStorage.setItem(suffixesKey, JSON.stringify(merged));
-      setRegisteredSuffixes(merged);
-    }
-    setSuffixInput(normalizedSuffix);
     setIsAliasRegistered(true);
     await loadDeposits();
   };
 
-  const retryEvent = async (eventId: number, suffix: string) => {
+  const retryEvent = async (eventId: number) => {
     const headers = { 'content-type': 'application/json', ...auth.authHeaders };
-    await fetch(`${resolver}/deposit-events/${eventId}/retry`, { method: 'POST', headers, body: JSON.stringify({ suffix }) });
+    await fetch(`${resolver}/deposit-events/${eventId}/retry`, { method: 'POST', headers, body: JSON.stringify({}) });
     await loadDeposits();
   };
 
   const retryAllStuck = async () => {
-    const stuck = rows.flatMap((r) => (r.events ?? []).filter((e: any) => e.stuck).map((e: any) => ({ eventId: e.id, suffix: r.aliasSuffix ?? '' })));
-    for (const event of stuck) await retryEvent(event.eventId, event.suffix);
+    const stuck = rows.flatMap((r) => (r.events ?? []).filter((e: any) => e.stuck).map((e: any) => e.id));
+    for (const eventId of stuck) await retryEvent(eventId);
   };
 
-  const grouped = useMemo(() => rows.reduce((acc: Record<string, any>, row) => {
-    const key = row.l1DepositAddressY ?? 'unknown';
-    if (!acc[key]) acc[key] = { address: row.l1DepositAddressY, alias: row.alias ?? auth.displayName, suffix: row.aliasSuffix ?? '', rows: [] as any[] };
-    acc[key].rows.push(row);
-    return acc;
-  }, {}), [auth.displayName, rows]);
+  const grouped = useMemo(
+    () =>
+      rows.reduce((acc: Record<string, any>, row) => {
+        const key = row.l1DepositAddressY ?? 'unknown';
+        if (!acc[key]) acc[key] = { address: row.l1DepositAddressY, alias: row.alias ?? auth.displayName, rows: [] as any[] };
+        acc[key].rows.push(row);
+        return acc;
+      }, {}),
+    [auth.displayName, rows]
+  );
   const groupedEntries = useMemo(() => Object.values(grouped) as any[], [grouped]);
   const [activeGroups, inactiveGroups] = useMemo(() => {
     const withActivity: any[] = [];
@@ -231,7 +158,7 @@ export function PortalPage({ resolver }: { resolver: string }) {
       <div key={group.address} className="card">
         <div className="receive-deposits-header">
           <div>
-            <div className="tab-subtitle">Alias</div>
+            <div className="tab-subtitle">Email</div>
             <div className="tab-title" style={{ fontSize: 18 }}>{group.alias}</div>
           </div>
           <div className="tab-subtitle">Deposit address: <span className="mono-block">{shortAddress(group.address)}</span></div>
@@ -267,7 +194,7 @@ export function PortalPage({ resolver }: { resolver: string }) {
                     <td>{getFormattedAmount(e)}</td>
                     <td><span className={`status-chip ${e.stuck ? 'status-chip--error' : 'status-chip--pending'}`}>{normalizeStatus(e.status)}</span></td>
                     <td>{e.attempts ?? 0}</td>
-                    <td>{e.stuck ? <button style={{ width: 'auto' }} onClick={() => void retryEvent(e.id, group.suffix ?? '')}>Retry</button> : '—'}</td>
+                    <td>{e.stuck ? <button style={{ width: 'auto' }} onClick={() => void retryEvent(e.id)}>Retry</button> : '—'}</td>
                   </tr>
                 ))
               )}
@@ -298,7 +225,7 @@ export function PortalPage({ resolver }: { resolver: string }) {
           <div>
             <div className="tab-title">Prividium Recipient Portal</div>
             <div className="tab-subtitle">Signed in as: {auth.displayName}</div>
-            {isAliasRegistered ? <div className="tab-subtitle">Registered aliases: {registeredAliases.join(', ')}</div> : null}
+            {isAliasRegistered ? <div className="tab-subtitle">✓ Your email is registered</div> : null}
           </div>
         </div>
         <div className="aave-info">
@@ -310,25 +237,19 @@ export function PortalPage({ resolver }: { resolver: string }) {
         {!isAliasRegistered ? (
           <div className="receive-setup-card">
             <div className="receive-setup-icon">@</div>
-            <div className="receive-setup-heading">Register alias</div>
+            <div className="receive-setup-heading">Register email</div>
             <div className="receive-setup-explanation">
-              Choose the suffix you want associated with your account so incoming deposits can be routed to you.
-            </div>
-            <div className="form-group">
-              <label htmlFor="portal-suffix">Optional suffix</label>
-              <input id="portal-suffix" placeholder="optional suffix" value={suffixInput} onChange={(e) => setSuffixInput(e.target.value)} />
+              Register your signed-in email with this account so incoming deposits can be routed to you.
             </div>
             <div className="receive-actions">
               <button className="receive-claim-btn" style={{ width: 'auto' }} onClick={() => void registerAlias()}>
-                Register alias
+                Register email
               </button>
             </div>
           </div>
         ) : (
           <div className="stack-md">
             <div className="form-row">
-              <input placeholder="optional suffix" value={suffixInput} onChange={(e) => setSuffixInput(e.target.value)} />
-              <button className="receive-claim-btn" style={{ width: 'auto' }} onClick={() => void registerAlias()}>Register alias</button>
               <button className="secondary-brand" style={{ width: 'auto' }} onClick={() => void loadDeposits()}>Refresh</button>
             </div>
             {rows.some((r) => (r.events ?? []).some((e: any) => e.stuck)) ? (
@@ -340,54 +261,22 @@ export function PortalPage({ resolver }: { resolver: string }) {
         )}
       </div>
 
-      <div className="page-stack">
-        {isAliasRegistered && Object.keys(grouped).length === 0 ? (
-          <div className="card">
-            <div className="receive-deposits-header">
-              <div>
-                <div className="tab-subtitle">Aliases</div>
-                <div className="tab-title" style={{ fontSize: 18 }}>{registeredAliases.join(', ')}</div>
-              </div>
-            </div>
+      {activeGroups.map(renderGroup)}
 
-            <div style={{ overflowX: 'auto', marginTop: 12 }}>
-              <table className="tx-table">
-                <thead>
-                  <tr>
-                    <th>Asset</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                    <th>Retries</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colSpan={5} className="tx-empty">No pending deposits</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : null}
-
-        {activeGroups.map(renderGroup)}
-        {showInactiveAddresses ? inactiveGroups.map(renderGroup) : null}
-        {inactiveGroups.length > 0 ? (
+      {inactiveGroups.length > 0 ? (
+        <div className="portal-inactive-toggle-wrap">
           <button
+            className="portal-inactive-toggle"
             type="button"
-            className="portal-toggle-empty"
             onClick={() => setShowInactiveAddresses((value) => !value)}
           >
             <span>{showInactiveAddresses ? 'Hide addresses with no activity' : 'Show all'}</span>
-            <span className={`portal-toggle-empty__chevron ${showInactiveAddresses ? 'open' : ''}`} aria-hidden>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M3 5L7 9L11 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
+            <span className={`portal-inactive-chevron ${showInactiveAddresses ? 'open' : ''}`}>⌄</span>
           </button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
+
+      {showInactiveAddresses ? inactiveGroups.map(renderGroup) : null}
     </div>
   );
 }
