@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AliasResult, SendDepositTab, SupportedToken } from '../app/types';
 import { TRACKING_COOKIE } from '../app/constants';
-import { clearCookie, formatBalanceValue, getCookie, hasValue, normalizeStatus, setCookie, shortAddress } from '../app/utils';
+import { clearCookie, formatBalanceValue, getCookie, normalizeStatus, setCookie, shortAddress } from '../app/utils';
 import { CopyIconButton } from '../components/CopyIconButton';
-import { FlowStepper } from '../components/FlowStepper';
 import { SendDepositPanel } from '../components/SendDepositPanel';
 
 export function SendPage({ resolver }: { resolver: string }) {
@@ -20,7 +19,6 @@ export function SendPage({ resolver }: { resolver: string }) {
   const trackingId = req?.trackingId;
   const trackingLink = useMemo(() => (trackingId ? `${window.location.origin}/send?trackingId=${trackingId}` : ''), [trackingId]);
   const events = status?.events ?? [];
-  const transferEvents = events.filter((e: any) => hasValue(e.amount));
   const tokenByAddress = useMemo(
     () => Object.fromEntries(acceptedTokens.map((token) => [token.l1Address.toLowerCase(), token])),
     [acceptedTokens]
@@ -219,8 +217,6 @@ export function SendPage({ resolver }: { resolver: string }) {
                   <div className="tab-subtitle">Scan QR to pay from your wallet.</div>
                   <div className="tab-subtitle">Details: tracking ID {req.trackingId}</div>
                 </div>
-
-                {transferEvents.length > 0 ? <FlowStepper events={transferEvents} /> : null}
               </>
             ) : (
               <SendDepositPanel
